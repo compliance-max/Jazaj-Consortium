@@ -136,4 +136,4 @@ services:
 
 databases:
   - name: consortium-manager-postgres
-    plan: starter
+    plan: basic-256mb
