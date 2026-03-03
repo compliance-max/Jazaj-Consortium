@@ -1,0 +1,575 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CTPA_ADMIN
+  CTPA_MANAGER
+  EMPLOYER_DER
+  READONLY_AUDITOR
+}
+
+enum AccountTokenType {
+  EMAIL_VERIFICATION
+  SET_PASSWORD
+  RESET_PASSWORD
+}
+
+enum EmployerStatus {
+  PENDING_PAYMENT
+  ACTIVE
+  INACTIVE
+}
+
+enum PoolType {
+  MASTER
+  INDIVIDUAL
+}
+
+enum DotAgency {
+  FMCSA
+}
+
+enum PoolCadence {
+  QUARTERLY
+}
+
+enum RandomPeriodType {
+  QUARTER
+}
+
+enum TestType {
+  DRUG
+  ALCOHOL
+  BOTH
+}
+
+enum TestReason {
+  RANDOM
+  USER_REQUEST
+}
+
+enum TestRequestStatus {
+  PENDING_PAYMENT
+  REQUESTED
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+enum RandomSelectedStatus {
+  SELECTED
+  NOTIFIED
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  REPLACED
+}
+
+enum PaymentType {
+  ENROLLMENT
+  RENEWAL
+  TEST_REQUEST
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum EnrollmentSubmissionStatus {
+  PENDING
+  PAID
+  PROCESSED
+  FAILED
+}
+
+enum TestResultStatus {
+  PENDING
+  NEGATIVE
+  POSITIVE
+  REFUSAL
+  CANCELLED
+}
+
+enum DocumentEntityType {
+  TEST_REQUEST
+  CERTIFICATE
+}
+
+enum DocumentRetentionCategory {
+  RANDOM
+  POST_ACCIDENT
+  REASONABLE_SUSPICION
+  RETURN_TO_DUTY
+  FOLLOW_UP
+  OTHER
+  CERTIFICATE
+}
+
+enum EnrollmentCertificateStatus {
+  ACTIVE
+  VOID
+}
+
+enum ChatConversationStatus {
+  OPEN
+  CLOSED
+}
+
+enum ChatConversationSource {
+  GUEST
+  MEMBER
+}
+
+enum ChatSenderType {
+  GUEST
+  MEMBER
+  ADMIN
+}
+
+model Employer {
+  id        String         @id @default(cuid())
+  legalName String
+  dotNumber String?        @unique
+  address   String
+  phone     String
+  email     String
+  status    EmployerStatus @default(PENDING_PAYMENT)
+  timezone  String         @default("America/Detroit")
+  poolMode  PoolType       @default(INDIVIDUAL)
+  activePoolId String?
+  renewalDueDate DateTime?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  activePool Pool? @relation("EmployerActivePool", fields: [activePoolId], references: [id], onDelete: SetNull)
+  users      EmployerUser[]
+  drivers    Driver[]
+  pools      Pool[]     @relation("EmployerOwnedPools")
+  auditLogs  AuditLog[]
+  testRequests TestRequest[]
+  randomEvents RandomSelectionEvent[]
+  poolSnapshots PoolSnapshot[]
+  complianceSummaries ComplianceYearSummary[]
+  randomSelectedDrivers RandomSelectedDriver[]
+  payments Payment[]
+  documents Document[]
+  certificates EnrollmentCertificate[]
+  chatConversations ChatConversation[]
+}
+
+model EmployerUser {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  fullName        String
+  passwordHash    String?
+  role            UserRole
+  employerId      String?
+  emailVerifiedAt DateTime?
+  passwordSet     Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  employer          Employer?               @relation(fields: [employerId], references: [id], onDelete: SetNull)
+  tokens            AccountToken[]
+  membershipChanges DriverPoolMembership[] @relation("UserMembershipChanges")
+  auditLogs         AuditLog[]             @relation("UserAuditLogs")
+  requestedTestRequests TestRequest[]      @relation("TestRequestRequestedBy")
+  overriddenSelectedDrivers RandomSelectedDriver[] @relation("RandomSelectedOverriddenBy")
+  chatConversations ChatConversation[]
+  chatMessages ChatMessage[] @relation("ChatMessageSenderUser")
+}
+
+model Driver {
+  id         String   @id @default(cuid())
+  employerId String
+  firstName  String
+  lastName   String
+  dob        DateTime
+  cdlNumber  String?
+  state      String?
+  email      String?
+  phone      String?
+  dotCovered Boolean  @default(true)
+  active     Boolean  @default(true)
+  currentPoolId String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  employer Employer @relation(fields: [employerId], references: [id], onDelete: Cascade)
+  currentPool Pool?  @relation("DriverCurrentPool", fields: [currentPoolId], references: [id], onDelete: SetNull)
+  poolMemberships DriverPoolMembership[]
+  testRequests TestRequest[]
+  randomEligibleDrivers RandomEligibleDriver[]
+  randomSelectedDrivers RandomSelectedDriver[]
+
+  @@index([employerId, active])
+  @@index([employerId, createdAt])
+  @@index([currentPoolId])
+}
+
+model AccountToken {
+  id        String           @id @default(cuid())
+  userId    String
+  type      AccountTokenType
+  tokenHash String           @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user EmployerUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type, expiresAt])
+}
+
+model Pool {
+  id        String      @id @default(cuid())
+  type      PoolType
+  employerId String?
+  dotAgency DotAgency   @default(FMCSA)
+  cadence   PoolCadence @default(QUARTERLY)
+  timezone  String      @default("America/Detroit")
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  employer        Employer?               @relation("EmployerOwnedPools", fields: [employerId], references: [id], onDelete: Cascade)
+  activeEmployers Employer[]              @relation("EmployerActivePool")
+  drivers         Driver[]                @relation("DriverCurrentPool")
+  memberships     DriverPoolMembership[]
+  randomEvents    RandomSelectionEvent[]
+  poolSnapshots   PoolSnapshot[]
+  complianceSummaries ComplianceYearSummary[]
+
+  @@index([type, dotAgency])
+  @@index([employerId, type])
+  @@unique([employerId, type])
+}
+
+model DriverPoolMembership {
+  id              String    @id @default(cuid())
+  driverId        String
+  poolId          String
+  effectiveStart  DateTime  @default(now())
+  effectiveEnd    DateTime?
+  changedByUserId String?
+  reason          String
+  createdAt       DateTime  @default(now())
+
+  driver        Driver       @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  pool          Pool         @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  changedByUser EmployerUser? @relation("UserMembershipChanges", fields: [changedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([driverId, effectiveEnd])
+  @@index([poolId, effectiveStart])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  employerId String?
+  action     String
+  entityType String
+  entityId   String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  user     EmployerUser? @relation("UserAuditLogs", fields: [userId], references: [id], onDelete: SetNull)
+  employer Employer?     @relation(fields: [employerId], references: [id], onDelete: SetNull)
+
+  @@index([employerId, createdAt])
+  @@index([action, createdAt])
+}
+
+model RandomPeriod {
+  id          String           @id @default(cuid())
+  year        Int
+  periodType  RandomPeriodType @default(QUARTER)
+  periodNumber Int
+  startDate   DateTime
+  endDate     DateTime
+  createdAt   DateTime         @default(now())
+
+  selectionEvents RandomSelectionEvent[]
+  poolSnapshots   PoolSnapshot[]
+
+  @@unique([year, periodType, periodNumber])
+  @@index([year, periodNumber])
+}
+
+model PoolSnapshot {
+  id              String   @id @default(cuid())
+  poolId          String
+  randomPeriodId  String
+  employerId      String?
+  coveredDriverCount Int
+  createdAt       DateTime @default(now())
+
+  pool         Pool         @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  randomPeriod RandomPeriod @relation(fields: [randomPeriodId], references: [id], onDelete: Cascade)
+  employer     Employer?    @relation(fields: [employerId], references: [id], onDelete: Cascade)
+
+  @@unique([poolId, randomPeriodId, employerId])
+  @@index([poolId, randomPeriodId])
+}
+
+model RandomSelectionEvent {
+  id                    String   @id @default(cuid())
+  poolId                String
+  randomPeriodId        String
+  employerId            String?
+  eligibleCount         Int
+  selectedCountDrug     Int
+  selectedCountAlcohol  Int
+  eligibleHash          String
+  selectedHashDrug      String
+  selectedHashAlcohol   String
+  algorithmVersion      String
+  randomHmac            String
+  selectionLocked       Boolean  @default(true)
+  runAt                 DateTime @default(now())
+
+  pool            Pool         @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  randomPeriod    RandomPeriod @relation(fields: [randomPeriodId], references: [id], onDelete: Cascade)
+  employer        Employer?    @relation(fields: [employerId], references: [id], onDelete: Cascade)
+  eligibleDrivers RandomEligibleDriver[]
+  selectedDrivers RandomSelectedDriver[]
+
+  @@unique([poolId, randomPeriodId])
+  @@index([employerId, runAt])
+}
+
+model RandomEligibleDriver {
+  id                String @id @default(cuid())
+  selectionEventId  String
+  driverId          String
+
+  selectionEvent RandomSelectionEvent @relation(fields: [selectionEventId], references: [id], onDelete: Cascade)
+  driver         Driver               @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@unique([selectionEventId, driverId])
+}
+
+model RandomSelectedDriver {
+  id                    String               @id @default(cuid())
+  selectionEventId      String
+  driverId              String
+  employerId            String
+  testType              TestType
+  status                RandomSelectedStatus @default(SELECTED)
+  testRequestId         String?              @unique
+  alternateOfSelectedId String?
+  overrideReason        String?
+  overriddenByUserId    String?
+
+  selectionEvent RandomSelectionEvent @relation(fields: [selectionEventId], references: [id], onDelete: Cascade)
+  driver         Driver               @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  employer       Employer             @relation(fields: [employerId], references: [id], onDelete: Cascade)
+  testRequest    TestRequest?         @relation(fields: [testRequestId], references: [id], onDelete: SetNull)
+  alternateOf    RandomSelectedDriver? @relation("RandomSelectedAlternates", fields: [alternateOfSelectedId], references: [id], onDelete: SetNull)
+  alternates     RandomSelectedDriver[] @relation("RandomSelectedAlternates")
+  overriddenByUser EmployerUser?      @relation("RandomSelectedOverriddenBy", fields: [overriddenByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([selectionEventId, driverId])
+  @@index([employerId, status])
+}
+
+model TestRequest {
+  id                 String            @id @default(cuid())
+  employerId         String
+  driverId           String?
+  requestedByUserId  String?
+  reason             TestReason
+  testType           TestType
+  priceCents         Int               @default(0)
+  paid               Boolean           @default(false)
+  status             TestRequestStatus @default(PENDING_PAYMENT)
+  clinicId           String?
+  collectedAt        DateTime?
+  completedAt        DateTime?
+  resultStatus       TestResultStatus  @default(PENDING)
+  resultDate         DateTime?
+  resultReportedAt   DateTime?
+  notes              String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  employer        Employer      @relation(fields: [employerId], references: [id], onDelete: Cascade)
+  driver          Driver?       @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  requestedByUser EmployerUser? @relation("TestRequestRequestedBy", fields: [requestedByUserId], references: [id], onDelete: SetNull)
+  randomSelected  RandomSelectedDriver?
+  clinic          Clinic?       @relation(fields: [clinicId], references: [id], onDelete: SetNull)
+  payments        Payment[]
+
+  @@index([employerId, reason, collectedAt])
+  @@index([driverId, createdAt])
+  @@index([employerId, createdAt])
+  @@index([resultReportedAt, id])
+}
+
+model ComplianceYearSummary {
+  id               String   @id @default(cuid())
+  poolId           String
+  employerId       String?
+  year             Int
+  avgCoveredDrivers Float
+  requiredDrug     Int
+  completedDrug    Int
+  requiredAlcohol  Int
+  completedAlcohol Int
+  lastRecalcAt     DateTime @default(now())
+
+  pool     Pool      @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  employer Employer? @relation(fields: [employerId], references: [id], onDelete: Cascade)
+
+  @@unique([poolId, employerId, year])
+  @@index([year, employerId])
+}
+
+model DotRateConfig {
+  id          String    @id @default(cuid())
+  agency      DotAgency
+  year        Int
+  drugRate    Float
+  alcoholRate Float
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([agency, year])
+}
+
+model Payment {
+  id                    String       @id @default(cuid())
+  employerId            String?
+  testRequestId         String?
+  enrollmentSubmissionId String?
+  type                  PaymentType
+  amountCents           Int
+  status                PaymentStatus @default(PENDING)
+  stripeSessionId       String       @unique
+  stripePaymentIntentId String?
+  method                String       @default("STRIPE")
+  reference             String?
+  createdAt             DateTime     @default(now())
+  paidAt                DateTime?
+
+  employer             Employer?            @relation(fields: [employerId], references: [id], onDelete: SetNull)
+  testRequest          TestRequest?         @relation(fields: [testRequestId], references: [id], onDelete: SetNull)
+  enrollmentSubmission EnrollmentSubmission? @relation(fields: [enrollmentSubmissionId], references: [id], onDelete: SetNull)
+}
+
+model EnrollmentSubmission {
+  id              String                    @id @default(cuid())
+  payload         Json
+  stripeSessionId String?                   @unique
+  paid            Boolean                   @default(false)
+  status          EnrollmentSubmissionStatus @default(PENDING)
+  createdAt       DateTime                  @default(now())
+
+  payments Payment[]
+}
+
+model Clinic {
+  id           String      @id @default(cuid())
+  name         String
+  address      String
+  phone        String?
+  email        String?
+  instructions String?
+  active       Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  testRequests TestRequest[]
+}
+
+model Document {
+  id                String                    @id @default(cuid())
+  employerId        String?
+  entityType        DocumentEntityType
+  entityId          String
+  storageKey        String
+  filename          String
+  contentType       String
+  retentionCategory DocumentRetentionCategory
+  createdAt         DateTime                  @default(now())
+
+  employer   Employer?              @relation(fields: [employerId], references: [id], onDelete: SetNull)
+  certificate EnrollmentCertificate?
+
+  @@index([employerId, entityType, entityId])
+}
+
+model EnrollmentCertificate {
+  id            String                      @id
+  employerId    String
+  effectiveDate DateTime
+  expirationDate DateTime
+  status        EnrollmentCertificateStatus @default(ACTIVE)
+  documentId    String                      @unique
+  createdAt     DateTime                    @default(now())
+  voidedAt      DateTime?
+  voidReason    String?
+
+  employer Employer @relation(fields: [employerId], references: [id], onDelete: Cascade)
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([employerId, status])
+}
+
+model CheckoutConfirmToken {
+  id             String   @id @default(cuid())
+  stripeSessionId String   @unique
+  tokenHash      String   @unique
+  expiresAt      DateTime
+  usedAt         DateTime?
+  createdAt      DateTime @default(now())
+}
+
+model ChatConversation {
+  id                    String                 @id @default(cuid())
+  status                ChatConversationStatus @default(OPEN)
+  source                ChatConversationSource
+  employerId            String?
+  userId                String?
+  guestName             String?
+  guestEmail            String?
+  guestSessionTokenHash String?
+  lastMessageAt         DateTime               @default(now())
+  lastMessageText       String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  employer Employer?    @relation(fields: [employerId], references: [id], onDelete: SetNull)
+  user     EmployerUser? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  messages ChatMessage[]
+
+  @@index([status, lastMessageAt, id])
+  @@index([source, lastMessageAt, id])
+  @@index([employerId, status])
+  @@index([userId, status])
+  @@index([guestSessionTokenHash, status])
+}
+
+model ChatMessage {
+  id             String         @id @default(cuid())
+  conversationId String
+  senderType     ChatSenderType
+  senderUserId   String?
+  messageText    String
+  createdAt      DateTime       @default(now())
+  readByAdminAt  DateTime?
+  readByMemberAt DateTime?
+
+  conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderUser   EmployerUser?    @relation("ChatMessageSenderUser", fields: [senderUserId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, createdAt, id])
+}

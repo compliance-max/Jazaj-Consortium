@@ -1,0 +1,148 @@
+services:
+  - type: web
+    name: consortium-manager-web
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_URL
+        fromService:
+          type: web
+          name: consortium-manager-web
+          property: url
+      - key: NEXTAUTH_URL
+        fromService:
+          type: web
+          name: consortium-manager-web
+          property: url
+      - key: DATABASE_URL
+        fromDatabase:
+          name: consortium-manager-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: consortium-manager-redis
+          property: connectionString
+      - key: NEXTAUTH_SECRET
+        generateValue: true
+      - key: INTERNAL_JOB_TOKEN
+        generateValue: true
+      - key: RANDOM_PROOF_SECRET
+        generateValue: true
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: POSTMARK_SERVER_TOKEN
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: SUPPORT_EMAIL
+        sync: false
+      - key: SUPPORT_PHONE
+        sync: false
+      - key: SUPPORT_ADDRESS
+        sync: false
+      - key: ALLOW_EMAIL_CONSOLE_FALLBACK
+        value: "false"
+      - key: POSTMARK_MESSAGE_STREAM_TRANSACTIONAL
+        value: transactional
+      - key: POSTMARK_MESSAGE_STREAM_NOTIFICATIONS
+        value: outbound
+      - key: POSTMARK_TEMPLATE_VERIFY_EMAIL_ALIAS
+        value: verify_email
+      - key: POSTMARK_TEMPLATE_SET_PASSWORD_ALIAS
+        value: set_password
+      - key: POSTMARK_TEMPLATE_RESET_PASSWORD_ALIAS
+        value: reset_password
+      - key: POSTMARK_TEMPLATE_ENROLLMENT_RECEIPT_ALIAS
+        value: enrollment_receipt
+      - key: POSTMARK_TEMPLATE_TEST_REQUEST_RECEIPT_ALIAS
+        value: test_request_receipt
+      - key: POSTMARK_TEMPLATE_RENEWAL_RECEIPT_ALIAS
+        value: renewal_receipt
+      - key: POSTMARK_TEMPLATE_RANDOM_SELECTED_NOTICE_ALIAS
+        value: random_selected_notice
+      - key: POSTMARK_TEMPLATE_RANDOM_NOT_SELECTED_NOTICE_ALIAS
+        value: random_not_selected_notice
+      - key: POSTMARK_TEMPLATE_QUARTER_END_ROSTER_REVIEW_ALIAS
+        value: quarter_end_roster_review
+      - key: POSTMARK_TEMPLATE_CLINIC_ASSIGNED_NOTICE_ALIAS
+        value: clinic_assigned_notice
+      - key: POSTMARK_TEMPLATE_RESULT_POSTED_NOTICE_ALIAS
+        value: result_posted_notice
+      - key: POSTMARK_TEMPLATE_CERTIFICATE_ISSUED_ALIAS
+        value: certificate_issued
+      - key: ALLOW_PROMO_BYPASS
+        value: "false"
+      - key: PROMO_CODE_JAZAJ
+        value: jazaj
+      - key: S3_REGION
+        sync: false
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ACCESS_KEY
+        sync: false
+      - key: S3_SECRET_KEY
+        sync: false
+      - key: S3_ENDPOINT
+        sync: false
+      - key: S3_FORCE_PATH_STYLE
+        value: "false"
+      - key: PUSHER_APP_ID
+        sync: false
+      - key: PUSHER_KEY
+        sync: false
+      - key: PUSHER_SECRET
+        sync: false
+      - key: PUSHER_CLUSTER
+        sync: false
+      - key: NEXT_PUBLIC_PUSHER_KEY
+        sync: false
+      - key: NEXT_PUBLIC_PUSHER_CLUSTER
+        sync: false
+      - key: AUDIT_EXPORT_PREFIX
+        value: audit-exports
+
+  - type: worker
+    name: consortium-manager-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile.worker
+    plan: starter
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_URL
+        fromService:
+          type: web
+          name: consortium-manager-web
+          property: url
+      - key: DATABASE_URL
+        fromDatabase:
+          name: consortium-manager-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: consortium-manager-redis
+          property: connectionString
+      - key: INTERNAL_JOB_TOKEN
+        fromService:
+          type: web
+          name: consortium-manager-web
+          envVarKey: INTERNAL_JOB_TOKEN
+
+  - type: redis
+    name: consortium-manager-redis
+    plan: starter
+    ipAllowList: []
+
+databases:
+  - name: consortium-manager-postgres
+    plan: starter

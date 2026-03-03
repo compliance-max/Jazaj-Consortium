@@ -1,0 +1,13 @@
+export const PRICE_DRUG_CENTS = 7500;
+export const PRICE_ALCOHOL_CENTS = 5000;
+export const PRICE_BOTH_CENTS = 12500;
+export const PRICE_ENROLLMENT_ANNUAL_CENTS = 9900;
+export const PRICE_RENEWAL_ANNUAL_CENTS = PRICE_ENROLLMENT_ANNUAL_CENTS;
+export const ENROLLMENT_ANNUAL_CENTS = PRICE_ENROLLMENT_ANNUAL_CENTS;
+export const RENEWAL_ANNUAL_CENTS = PRICE_RENEWAL_ANNUAL_CENTS;
+
+export function testTypePriceCents(testType: "DRUG" | "ALCOHOL" | "BOTH") {
+  if (testType === "DRUG") return PRICE_DRUG_CENTS;
+  if (testType === "ALCOHOL") return PRICE_ALCOHOL_CENTS;
+  return PRICE_BOTH_CENTS;
+}
