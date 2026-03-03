@@ -6,3 +6,5 @@ dist
 npm-debug.log*
 prisma/dev.db
 .DS_Store
+
+.local-storage
