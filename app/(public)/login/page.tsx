@@ -2,7 +2,6 @@
 
 import { FormEvent, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Building2, ShieldCheck } from "lucide-react";
 import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/button";
@@ -13,7 +12,6 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -36,14 +34,9 @@ export default function LoginPage() {
       toast.error("Login failed", { description: "Invalid credentials or too many attempts." });
       return;
     }
-    const sessionRes = await fetch("/api/auth/session");
-    const sessionPayload = await sessionRes.json().catch(() => ({}));
-    if (sessionPayload?.user?.role === "CTPA_ADMIN" || sessionPayload?.user?.role === "CTPA_MANAGER") {
-      router.push("/admin");
-    } else {
-      router.push("/portal/dashboard");
-    }
-    router.refresh();
+
+    // Hard redirect avoids occasional stale client-session state after credentials login in production.
+    window.location.assign(result.url || "/admin");
   }
 
   return (
