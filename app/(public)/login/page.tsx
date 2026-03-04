@@ -25,7 +25,8 @@ export default function LoginPage() {
     const result = await signIn("credentials", {
       email,
       password,
-      redirect: false
+      redirect: false,
+      callbackUrl: "/admin"
     });
 
     setLoading(false);
@@ -36,7 +37,7 @@ export default function LoginPage() {
     }
 
     // Hard redirect avoids occasional stale client-session state after credentials login in production.
-    window.location.assign(result.url || "/admin");
+    window.location.assign("/admin");
   }
 
   return (
