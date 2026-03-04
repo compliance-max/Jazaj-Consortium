@@ -11,12 +11,6 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
-type SessionPayload = {
-  user?: {
-    role?: "CTPA_ADMIN" | "CTPA_MANAGER" | "EMPLOYER_DER" | "READONLY_AUDITOR";
-  };
-};
-
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -28,33 +22,49 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
 
-    const result = await signIn("credentials", {
-      email,
-      password,
-      redirect: false,
-      callbackUrl: "/"
-    });
+    let result:
+      | {
+          error?: string;
+          ok?: boolean;
+          status?: number;
+          url?: string | null;
+        }
+      | undefined;
+
+    try {
+      result = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
+        callbackUrl: "/auth/post-login"
+      });
+    } catch (error) {
+      console.error("[login] signIn request threw", error);
+      setLoading(false);
+      setError("Login failed. Please try again.");
+      toast.error("Login failed", { description: "Unable to reach authentication service." });
+      return;
+    }
 
     if (!result || result.error || !result.ok) {
+      console.error("[login] signIn failed", {
+        error: result?.error,
+        status: result?.status,
+        ok: result?.ok
+      });
+      const authError = result?.error || "CredentialsSignin";
+      const message =
+        authError === "Configuration"
+          ? "Server configuration error. Contact support."
+          : "Invalid credentials or too many attempts.";
       setLoading(false);
-      setError("Invalid credentials or too many attempts.");
-      toast.error("Login failed", { description: "Invalid credentials or too many attempts." });
+      setError(message);
+      toast.error("Login failed", { description: message });
       return;
     }
 
-    const sessionRes = await fetch("/api/auth/session", { cache: "no-store" });
-    const session = (await sessionRes.json().catch(() => ({}))) as SessionPayload;
+    const destination = result.url || "/auth/post-login";
     setLoading(false);
-    const role = session.user?.role;
-
-    if (!role) {
-      setError("Session was not created. Please try again.");
-      toast.error("Session not created", { description: "Please try signing in again." });
-      return;
-    }
-
-    const adminRoles = new Set(["CTPA_ADMIN", "CTPA_MANAGER"]);
-    const destination = adminRoles.has(role) ? "/admin" : "/portal";
     // Hard redirect avoids occasional stale client-session state after credentials login in production.
     window.location.assign(destination);
   }
