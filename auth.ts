@@ -6,12 +6,21 @@ import { prisma } from "@/lib/db/prisma";
 import { verifyPassword } from "@/lib/security/password";
 import { consumeRateLimit } from "@/lib/security/rate-limit";
 
+const AUTH_SECRET_FALLBACK =
+  process.env.AUTH_SECRET ||
+  process.env.NEXTAUTH_SECRET ||
+  (process.env.NODE_ENV === "production"
+    ? "change-me-render-auth-secret"
+    : "dev-auth-secret");
+
 const credentialsSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8)
 });
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  secret: AUTH_SECRET_FALLBACK,
+  trustHost: true,
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
   providers: [

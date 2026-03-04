@@ -12,6 +12,8 @@ services:
         sync: false
       - key: NEXTAUTH_URL
         sync: false
+      - key: AUTH_TRUST_HOST
+        value: "true"
       - key: ALLOWED_ORIGINS
         sync: false
       - key: DATABASE_URL
@@ -24,6 +26,8 @@ services:
           name: consortium-manager-redis
           property: connectionString
       - key: NEXTAUTH_SECRET
+        generateValue: true
+      - key: AUTH_SECRET
         generateValue: true
       - key: INTERNAL_JOB_TOKEN
         generateValue: true
