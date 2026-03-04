@@ -35,7 +35,7 @@ export default function LoginPage() {
       result = await signIn("credentials", {
         email,
         password,
-        redirect: false,
+        redirect: true,
         callbackUrl: "/auth/post-login"
       });
     } catch (error) {
@@ -65,7 +65,7 @@ export default function LoginPage() {
 
     const destination = result.url || "/auth/post-login";
     setLoading(false);
-    // Hard redirect avoids occasional stale client-session state after credentials login in production.
+    // Fallback only; in normal flow redirect:true will already navigate.
     window.location.assign(destination);
   }
 
