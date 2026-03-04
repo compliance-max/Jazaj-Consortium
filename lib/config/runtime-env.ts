@@ -12,8 +12,6 @@ declare global {
   var __envValidationLoggedOnce: boolean | undefined;
 }
 
-const CANONICAL_PROD_ORIGIN = "https://jazaj.com";
-
 export function getAuthSecret() {
   return process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET || "";
 }
@@ -38,13 +36,18 @@ export function validateProductionEnv(): EnvValidation {
 
   if (!appOrigin) {
     missing.push("APP_URL");
-  } else if (appOrigin !== CANONICAL_PROD_ORIGIN) {
+  } else if (!appOrigin.startsWith("https://")) {
     invalid.push("APP_URL");
   }
 
   if (!nextAuthOrigin) {
     missing.push("NEXTAUTH_URL");
-  } else if (nextAuthOrigin !== CANONICAL_PROD_ORIGIN) {
+  } else if (!nextAuthOrigin.startsWith("https://")) {
+    invalid.push("NEXTAUTH_URL");
+  }
+
+  if (appOrigin && nextAuthOrigin && appOrigin !== nextAuthOrigin) {
+    invalid.push("APP_URL");
     invalid.push("NEXTAUTH_URL");
   }
 

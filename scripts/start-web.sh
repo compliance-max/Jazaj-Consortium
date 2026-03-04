@@ -4,12 +4,26 @@ set -e
 if [ "${NODE_ENV}" = "production" ]; then
   MISSING_KEYS=""
 
-  if [ "${APP_URL}" != "https://jazaj.com" ]; then
+  if [ -z "${APP_URL}" ]; then
     MISSING_KEYS="${MISSING_KEYS},APP_URL"
+  else
+    case "${APP_URL}" in
+      https://*) ;;
+      *) MISSING_KEYS="${MISSING_KEYS},APP_URL" ;;
+    esac
   fi
 
-  if [ "${NEXTAUTH_URL}" != "https://jazaj.com" ]; then
+  if [ -z "${NEXTAUTH_URL}" ]; then
     MISSING_KEYS="${MISSING_KEYS},NEXTAUTH_URL"
+  else
+    case "${NEXTAUTH_URL}" in
+      https://*) ;;
+      *) MISSING_KEYS="${MISSING_KEYS},NEXTAUTH_URL" ;;
+    esac
+  fi
+
+  if [ -n "${APP_URL}" ] && [ -n "${NEXTAUTH_URL}" ] && [ "${APP_URL}" != "${NEXTAUTH_URL}" ]; then
+    MISSING_KEYS="${MISSING_KEYS},APP_URL,NEXTAUTH_URL"
   fi
 
   if [ -z "${NEXTAUTH_SECRET}" ]; then

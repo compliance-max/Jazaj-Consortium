@@ -12,7 +12,10 @@ type BootstrapEnv = {
 
 function boolFromEnv(value: string | undefined, fallback: boolean) {
   if (value === undefined) return fallback;
-  return value === "true";
+  const normalized = value.trim().toLowerCase();
+  if (["true", "1", "yes", "y", "on"].includes(normalized)) return true;
+  if (["false", "0", "no", "n", "off"].includes(normalized)) return false;
+  return fallback;
 }
 
 function ensureRequired(input: string | undefined, key: string) {
