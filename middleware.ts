@@ -173,20 +173,6 @@ export async function middleware(req: NextRequest) {
     return response;
   }
 
-  if (isApi) {
-    const origin = extractOriginFromRequest(req);
-    if (origin && !isAllowedOriginValue(origin)) {
-      return rejectWithLog({
-        logger,
-        requestId,
-        req,
-        message: "Forbidden",
-        reason: "Rejected API request due to disallowed origin",
-        extra: { origin }
-      });
-    }
-  }
-
   if (isMutation(req) && isOriginProtectedPath(pathname)) {
     if (!isAllowedOrigin(req)) {
       return rejectWithLog({
