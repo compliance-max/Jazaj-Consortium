@@ -31,7 +31,10 @@ function primaryAllowedOrigin() {
 
 function corsOriginForResponse(req: NextRequest) {
   const requestOrigin = extractOriginFromRequest(req);
-  if (requestOrigin && isAllowedOriginValueFromConfig(requestOrigin, originConfig())) {
+  if (
+    requestOrigin &&
+    (isAllowedOriginValueFromConfig(requestOrigin, originConfig()) || requestOrigin === req.nextUrl.origin)
+  ) {
     return requestOrigin;
   }
   return primaryAllowedOriginFromConfig(originConfig());
@@ -77,6 +80,7 @@ function isAllowedOrigin(req: NextRequest) {
     if (!["same-origin", "same-site", "none"].includes(secFetchSite)) return false;
     return isAllowedOriginValueFromConfig(req.nextUrl.origin, originConfig());
   }
+  if (requestOrigin === req.nextUrl.origin) return true;
   return isAllowedOriginValueFromConfig(requestOrigin, originConfig());
 }
 
@@ -103,7 +107,8 @@ function codeFromStatus(status: number) {
 function jsonError(message: string, status: number, requestId: string, code?: string) {
   return NextResponse.json(
     {
-      error: {
+      error: message,
+      errorDetail: {
         code: code || codeFromStatus(status),
         message,
         requestId
