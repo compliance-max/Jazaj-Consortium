@@ -11,6 +11,12 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
+type SessionPayload = {
+  user?: {
+    role?: "CTPA_ADMIN" | "CTPA_MANAGER" | "EMPLOYER_DER" | "READONLY_AUDITOR";
+  };
+};
+
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -26,18 +32,31 @@ export default function LoginPage() {
       email,
       password,
       redirect: false,
-      callbackUrl: "/admin"
+      callbackUrl: "/"
     });
 
-    setLoading(false);
-    if (!result || result.error) {
+    if (!result || result.error || !result.ok) {
+      setLoading(false);
       setError("Invalid credentials or too many attempts.");
       toast.error("Login failed", { description: "Invalid credentials or too many attempts." });
       return;
     }
 
+    const sessionRes = await fetch("/api/auth/session", { cache: "no-store" });
+    const session = (await sessionRes.json().catch(() => ({}))) as SessionPayload;
+    setLoading(false);
+    const role = session.user?.role;
+
+    if (!role) {
+      setError("Session was not created. Please try again.");
+      toast.error("Session not created", { description: "Please try signing in again." });
+      return;
+    }
+
+    const adminRoles = new Set(["CTPA_ADMIN", "CTPA_MANAGER"]);
+    const destination = adminRoles.has(role) ? "/admin" : "/portal";
     // Hard redirect avoids occasional stale client-session state after credentials login in production.
-    window.location.assign("/admin");
+    window.location.assign(destination);
   }
 
   return (

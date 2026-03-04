@@ -114,6 +114,22 @@ function jsonError(message: string, status: number, requestId: string, code?: st
   );
 }
 
+function clearAuthCookies(response: NextResponse) {
+  const cookieNames = [
+    "authjs.session-token",
+    "__Secure-authjs.session-token",
+    "next-auth.session-token",
+    "__Secure-next-auth.session-token"
+  ];
+
+  for (const name of cookieNames) {
+    response.cookies.set(name, "", {
+      path: "/",
+      expires: new Date(0)
+    });
+  }
+}
+
 function rejectWithLog(input: {
   logger: ReturnType<typeof createLogger>;
   requestId: string;
@@ -303,7 +319,11 @@ export async function middleware(req: NextRequest) {
 
   if (pathname.startsWith("/admin")) {
     if (!token?.sub) return NextResponse.redirect(new URL("/login", req.url));
-    if (token.disabledAt) return jsonError("Forbidden", 403, requestId);
+    if (token.disabledAt) {
+      const response = NextResponse.redirect(new URL("/login?error=disabled", req.url));
+      clearAuthCookies(response);
+      return response;
+    }
     if (!token.role || !ADMIN_ROLES.has(String(token.role))) {
       return NextResponse.redirect(new URL("/portal", req.url));
     }
@@ -311,7 +331,11 @@ export async function middleware(req: NextRequest) {
 
   if (pathname.startsWith("/portal")) {
     if (!token?.sub) return NextResponse.redirect(new URL("/login", req.url));
-    if (token.disabledAt) return jsonError("Forbidden", 403, requestId);
+    if (token.disabledAt) {
+      const response = NextResponse.redirect(new URL("/login?error=disabled", req.url));
+      clearAuthCookies(response);
+      return response;
+    }
     if (!token.role || !PORTAL_ROLES.has(String(token.role))) {
       return NextResponse.redirect(new URL("/admin", req.url));
     }
