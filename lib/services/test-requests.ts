@@ -4,12 +4,30 @@ import { testTypePriceCents } from "@/lib/billing/pricing";
 import { createCheckoutConfirmToken } from "@/lib/services/checkout-confirm-token";
 import { createTestRequestCheckoutSession } from "@/lib/services/stripe-checkout";
 import { recalculateComplianceForPoolYear } from "@/lib/services/random/compliance";
-import { sendClinicAssignmentEmail, sendResultPostedEmail } from "@/lib/email/postmark";
+import { sendClinicAssignmentEmail, sendResultPostedEmail, sendTestPaymentReceiptEmail } from "@/lib/email/postmark";
 import { uploadDocumentBinary } from "@/lib/storage/documents";
 
 function retentionCategoryForReason(reason: TestReason) {
   if (reason === "RANDOM") return "RANDOM" as const;
   return "OTHER" as const;
+}
+
+function normalizedPromoCode(input?: string | null) {
+  return (input || "").trim().toLowerCase();
+}
+
+function promoConfig() {
+  return {
+    code: (process.env.PROMO_JAZAJ_CODE || "jazaj").trim().toLowerCase(),
+    enabled: process.env.DEMO_MODE === "true" || process.env.PROMO_JAZAJ_ENABLED === "true"
+  };
+}
+
+function isPromoBypass(input?: string | null) {
+  const code = normalizedPromoCode(input);
+  if (!code) return false;
+  const config = promoConfig();
+  return config.enabled && code === config.code;
 }
 
 export async function listPortalTestRequests(employerId: string) {
@@ -41,6 +59,7 @@ export async function createTestRequestWithCheckout(input: {
   reason?: TestReason;
   testType: TestType;
   notes?: string | null;
+  promoCode?: string | null;
 }) {
   if (input.driverId) {
     const driver = await prisma.driver.findFirst({
@@ -53,6 +72,8 @@ export async function createTestRequestWithCheckout(input: {
   }
 
   const priceCents = testTypePriceCents(input.testType);
+  const promoBypass = isPromoBypass(input.promoCode);
+  const promoCode = normalizedPromoCode(input.promoCode);
 
   const request = await prisma.testRequest.create({
     data: {
@@ -61,12 +82,62 @@ export async function createTestRequestWithCheckout(input: {
       driverId: input.driverId || null,
       reason: input.reason || "USER_REQUEST",
       testType: input.testType,
-      priceCents,
-      paid: false,
-      status: "PENDING_PAYMENT",
+      priceCents: promoBypass ? 0 : priceCents,
+      paid: promoBypass,
+      status: promoBypass ? "REQUESTED" : "PENDING_PAYMENT",
       notes: input.notes || null
     }
   });
+
+  if (promoBypass) {
+    await prisma.payment.create({
+      data: {
+        employerId: input.employerId,
+        testRequestId: request.id,
+        type: "TEST_REQUEST",
+        amountCents: 0,
+        status: "PAID",
+        method: "PROMO",
+        reference: promoCode,
+        paidAt: new Date(),
+        stripeSessionId: `promo-test-${request.id}-${Date.now()}`
+      }
+    });
+
+    const employer = await prisma.employer.findUnique({
+      where: { id: input.employerId },
+      select: { email: true }
+    });
+    if (employer?.email) {
+      await sendTestPaymentReceiptEmail({
+        to: employer.email,
+        requestId: request.id,
+        amountCents: 0
+      });
+    }
+
+    await prisma.auditLog.create({
+      data: {
+        userId: input.requestedByUserId || null,
+        employerId: input.employerId,
+        action: "TEST_REQUEST_CREATED_PROMO",
+        entityType: "TestRequest",
+        entityId: request.id,
+        metadata: {
+          status: "REQUESTED",
+          priceCents: 0,
+          method: "PROMO",
+          promoCode
+        }
+      }
+    });
+
+    return {
+      request,
+      kind: "PROMO" as const,
+      paid: true
+    };
+  }
 
   const session = await createTestRequestCheckoutSession({
     testRequestId: request.id,
@@ -106,6 +177,7 @@ export async function createTestRequestWithCheckout(input: {
 
   return {
     request,
+    kind: "STRIPE" as const,
     checkoutUrl: session.url,
     checkoutSessionId: session.id,
     confirmToken: confirmToken.raw
@@ -116,6 +188,7 @@ export async function createCheckoutForExistingPendingRequest(input: {
   requestId: string;
   employerId: string;
   customerEmail?: string | null;
+  promoCode?: string | null;
 }) {
   const request = await prisma.testRequest.findFirst({
     where: {
@@ -125,6 +198,65 @@ export async function createCheckoutForExistingPendingRequest(input: {
   });
   if (!request) throw new Error("REQUEST_NOT_FOUND");
   if (request.paid || request.status !== "PENDING_PAYMENT") throw new Error("REQUEST_NOT_PENDING_PAYMENT");
+
+  const promoBypass = isPromoBypass(input.promoCode);
+  const promoCode = normalizedPromoCode(input.promoCode);
+  if (promoBypass) {
+    const updated = await prisma.testRequest.update({
+      where: { id: request.id },
+      data: {
+        paid: true,
+        status: "REQUESTED",
+        priceCents: 0
+      }
+    });
+
+    await prisma.payment.create({
+      data: {
+        employerId: request.employerId,
+        testRequestId: request.id,
+        type: "TEST_REQUEST",
+        amountCents: 0,
+        status: "PAID",
+        method: "PROMO",
+        reference: promoCode,
+        paidAt: new Date(),
+        stripeSessionId: `promo-test-${request.id}-${Date.now()}`
+      }
+    });
+
+    const employer = await prisma.employer.findUnique({
+      where: { id: request.employerId },
+      select: { email: true }
+    });
+    if (employer?.email) {
+      await sendTestPaymentReceiptEmail({
+        to: employer.email,
+        requestId: request.id,
+        amountCents: 0
+      });
+    }
+
+    await prisma.auditLog.create({
+      data: {
+        userId: null,
+        employerId: request.employerId,
+        action: "TEST_REQUEST_PAID_PROMO",
+        entityType: "TestRequest",
+        entityId: request.id,
+        metadata: {
+          method: "PROMO",
+          promoCode
+        }
+      }
+    });
+
+    return {
+      kind: "PROMO" as const,
+      paid: true,
+      request: updated
+    };
+  }
 
   const session = await createTestRequestCheckoutSession({
     testRequestId: request.id,
@@ -148,6 +280,7 @@ export async function createCheckoutForExistingPendingRequest(input: {
   });
 
   return {
+    kind: "STRIPE" as const,
     checkoutUrl: session.url,
     checkoutSessionId: session.id,
     confirmToken: confirmToken.raw

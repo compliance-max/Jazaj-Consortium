@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { createLogger } from "@/lib/logging/logger";
+import {
+  isAllowedOriginValue as isAllowedOriginValueFromConfig,
+  primaryAllowedOrigin as primaryAllowedOriginFromConfig
+} from "@/lib/security/origin";
 
 const ADMIN_ROLES = new Set(["CTPA_ADMIN", "CTPA_MANAGER"]);
 const PORTAL_ROLES = new Set(["EMPLOYER_DER", "READONLY_AUDITOR"]);
@@ -8,76 +12,29 @@ const STATE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const CSRF_COOKIE_NAME = "ctpa_csrf";
 const CSRF_HEADER_NAME = "x-csrf-token";
 
-function parseOrigin(value?: string | null) {
-  if (!value) return null;
-  try {
-    return new URL(value).origin;
-  } catch {
-    return null;
-  }
-}
-
-function isProduction() {
-  return process.env.NODE_ENV === "production";
-}
-
-function configuredOrigins() {
-  const configured = new Set<string>();
-  const appOrigin = parseOrigin(process.env.APP_URL);
-  const nextAuthOrigin = parseOrigin(process.env.NEXTAUTH_URL);
-  for (const origin of [appOrigin, nextAuthOrigin]) {
-    if (!origin) continue;
-    configured.add(origin);
-    try {
-      const url = new URL(origin);
-      if (url.hostname.startsWith("www.")) {
-        url.hostname = url.hostname.slice(4);
-        configured.add(url.origin);
-      } else {
-        url.hostname = `www.${url.hostname}`;
-        configured.add(url.origin);
-      }
-    } catch {
-      // ignore malformed origin variants
-    }
-  }
-  if (!appOrigin && !nextAuthOrigin) {
-    configured.add("http://localhost:3000");
-  }
-  return configured;
-}
-
-function isAllowedDevLocalOrigin(origin: string) {
-  const parsed = parseOrigin(origin);
-  if (!parsed) return false;
-  const url = new URL(parsed);
-  return url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1");
+function originConfig() {
+  return {
+    appUrl: process.env.APP_URL,
+    nextAuthUrl: process.env.NEXTAUTH_URL,
+    allowedOrigins: process.env.ALLOWED_ORIGINS,
+    nodeEnv: process.env.NODE_ENV
+  };
 }
 
 function isAllowedOriginValue(origin: string) {
-  const configured = configuredOrigins();
-  if (configured.has(origin)) return true;
-  if (!isProduction() && isAllowedDevLocalOrigin(origin)) return true;
-  return false;
+  return isAllowedOriginValueFromConfig(origin, originConfig());
 }
 
 function primaryAllowedOrigin() {
-  const appOrigin = parseOrigin(process.env.APP_URL);
-  if (appOrigin) return appOrigin;
-  const nextAuthOrigin = parseOrigin(process.env.NEXTAUTH_URL);
-  if (nextAuthOrigin) return nextAuthOrigin;
-  return "http://localhost:3000";
+  return primaryAllowedOriginFromConfig(originConfig());
 }
 
 function corsOriginForResponse(req: NextRequest) {
-  if (isProduction()) {
-    return primaryAllowedOrigin();
-  }
   const requestOrigin = extractOriginFromRequest(req);
-  if (requestOrigin && isAllowedOriginValue(requestOrigin)) {
+  if (requestOrigin && isAllowedOriginValueFromConfig(requestOrigin, originConfig())) {
     return requestOrigin;
   }
-  return primaryAllowedOrigin();
+  return primaryAllowedOriginFromConfig(originConfig());
 }
 
 function isApiPath(pathname: string) {
@@ -118,9 +75,9 @@ function isAllowedOrigin(req: NextRequest) {
   if (!requestOrigin) {
     const secFetchSite = (req.headers.get("sec-fetch-site") || "").toLowerCase();
     if (!["same-origin", "same-site", "none"].includes(secFetchSite)) return false;
-    return isAllowedOriginValue(req.nextUrl.origin);
+    return isAllowedOriginValueFromConfig(req.nextUrl.origin, originConfig());
   }
-  return isAllowedOriginValue(requestOrigin);
+  return isAllowedOriginValueFromConfig(requestOrigin, originConfig());
 }
 
 function corsHeaders(origin: string) {
@@ -133,8 +90,51 @@ function corsHeaders(origin: string) {
   };
 }
 
-function jsonError(message: string, status: number) {
-  return NextResponse.json({ error: message }, { status });
+function codeFromStatus(status: number) {
+  if (status === 401) return "UNAUTHORIZED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 422) return "VALIDATION_ERROR";
+  if (status === 429) return "RATE_LIMITED";
+  if (status >= 500) return "SERVER_ERROR";
+  return "BAD_REQUEST";
+}
+
+function jsonError(message: string, status: number, requestId: string, code?: string) {
+  return NextResponse.json(
+    {
+      error: {
+        code: code || codeFromStatus(status),
+        message,
+        requestId
+      }
+    },
+    { status }
+  );
+}
+
+function rejectWithLog(input: {
+  logger: ReturnType<typeof createLogger>;
+  requestId: string;
+  req: NextRequest;
+  status?: number;
+  message: string;
+  code?: string;
+  reason: string;
+  extra?: Record<string, unknown>;
+}) {
+  const origin = input.req.headers.get("origin");
+  const referer = input.req.headers.get("referer");
+  input.logger.warn(input.reason, {
+    pathname: input.req.nextUrl.pathname,
+    method: input.req.method,
+    origin,
+    referer,
+    ...input.extra
+  });
+  const denied = jsonError(input.message, input.status || 403, input.requestId, input.code);
+  denied.headers.set("x-request-id", input.requestId);
+  return denied;
 }
 
 export async function middleware(req: NextRequest) {
@@ -152,9 +152,13 @@ export async function middleware(req: NextRequest) {
 
   if (isApi && req.method === "OPTIONS") {
     if (!isAllowedOrigin(req)) {
-      const denied = jsonError("Forbidden", 403);
-      denied.headers.set("x-request-id", requestId);
-      return denied;
+      return rejectWithLog({
+        logger,
+        requestId,
+        req,
+        message: "Forbidden",
+        reason: "Rejected OPTIONS request due to disallowed origin"
+      });
     }
     const response = new NextResponse(null, {
       status: 204,
@@ -167,19 +171,26 @@ export async function middleware(req: NextRequest) {
   if (isApi) {
     const origin = extractOriginFromRequest(req);
     if (origin && !isAllowedOriginValue(origin)) {
-      logger.warn("Rejected API request due to disallowed origin", { origin });
-      const denied = jsonError("Forbidden", 403);
-      denied.headers.set("x-request-id", requestId);
-      return denied;
+      return rejectWithLog({
+        logger,
+        requestId,
+        req,
+        message: "Forbidden",
+        reason: "Rejected API request due to disallowed origin",
+        extra: { origin }
+      });
     }
   }
 
   if (isMutation(req) && isOriginProtectedPath(pathname)) {
     if (!isAllowedOrigin(req)) {
-      logger.warn("Rejected mutation due to missing/invalid origin");
-      const denied = jsonError("Forbidden", 403);
-      denied.headers.set("x-request-id", requestId);
-      return denied;
+      return rejectWithLog({
+        logger,
+        requestId,
+        req,
+        message: "Forbidden",
+        reason: "Rejected mutation due to missing/invalid origin"
+      });
     }
   }
 
@@ -193,67 +204,109 @@ export async function middleware(req: NextRequest) {
     const csrfCookie = req.cookies.get(CSRF_COOKIE_NAME)?.value || "";
     const csrfHeader = req.headers.get(CSRF_HEADER_NAME) || "";
     if (!csrfCookie || !csrfHeader || csrfCookie !== csrfHeader) {
-      logger.warn("Rejected mutation due to CSRF mismatch");
-      const denied = jsonError("CSRF validation failed", 403);
-      denied.headers.set("x-request-id", requestId);
-      return denied;
+      return rejectWithLog({
+        logger,
+        requestId,
+        req,
+        message: "CSRF validation failed",
+        reason: "Rejected mutation due to CSRF mismatch",
+        code: "CSRF_FAILED"
+      });
     }
   }
 
   if (pathname.startsWith("/api/admin/")) {
     if (!token?.sub) {
-      const denied = jsonError("Unauthorized", 401);
-      denied.headers.set("x-request-id", requestId);
-      return denied;
+      return rejectWithLog({
+        logger,
+        requestId,
+        req,
+        status: 401,
+        message: "Unauthorized",
+        reason: "Rejected admin API request without session"
+      });
     }
     if (token.disabledAt) {
-      const denied = jsonError("Forbidden", 403);
-      denied.headers.set("x-request-id", requestId);
-      return denied;
+      return rejectWithLog({
+        logger,
+        requestId,
+        req,
+        message: "Forbidden",
+        reason: "Rejected disabled admin user"
+      });
     }
     if (!token.role || !ADMIN_ROLES.has(String(token.role))) {
-      const denied = jsonError("Forbidden", 403);
-      denied.headers.set("x-request-id", requestId);
-      return denied;
+      return rejectWithLog({
+        logger,
+        requestId,
+        req,
+        message: "Forbidden",
+        reason: "Rejected non-admin role on admin API"
+      });
     }
   }
 
   if (pathname.startsWith("/api/portal/")) {
     if (!token?.sub) {
-      const denied = jsonError("Unauthorized", 401);
-      denied.headers.set("x-request-id", requestId);
-      return denied;
+      return rejectWithLog({
+        logger,
+        requestId,
+        req,
+        status: 401,
+        message: "Unauthorized",
+        reason: "Rejected portal API request without session"
+      });
     }
     if (token.disabledAt) {
-      const denied = jsonError("Forbidden", 403);
-      denied.headers.set("x-request-id", requestId);
-      return denied;
+      return rejectWithLog({
+        logger,
+        requestId,
+        req,
+        message: "Forbidden",
+        reason: "Rejected disabled portal user"
+      });
     }
     if (!token.role || !PORTAL_ROLES.has(String(token.role))) {
-      const denied = jsonError("Forbidden", 403);
-      denied.headers.set("x-request-id", requestId);
-      return denied;
+      return rejectWithLog({
+        logger,
+        requestId,
+        req,
+        message: "Forbidden",
+        reason: "Rejected non-portal role on portal API"
+      });
     }
     if (!token.employerId) {
-      const denied = jsonError("Forbidden", 403);
-      denied.headers.set("x-request-id", requestId);
-      return denied;
+      return rejectWithLog({
+        logger,
+        requestId,
+        req,
+        message: "Forbidden",
+        reason: "Rejected portal user without employer scope"
+      });
     }
     if (!token.emailVerifiedAt) {
-      const denied = jsonError("Unverified email", 403);
-      denied.headers.set("x-request-id", requestId);
-      return denied;
+      return rejectWithLog({
+        logger,
+        requestId,
+        req,
+        message: "Unverified email",
+        reason: "Rejected unverified portal user"
+      });
     }
     if (isMutation(req) && token.role === "READONLY_AUDITOR") {
-      const denied = jsonError("Forbidden", 403);
-      denied.headers.set("x-request-id", requestId);
-      return denied;
+      return rejectWithLog({
+        logger,
+        requestId,
+        req,
+        message: "Forbidden",
+        reason: "Rejected readonly auditor portal mutation"
+      });
     }
   }
 
   if (pathname.startsWith("/admin")) {
     if (!token?.sub) return NextResponse.redirect(new URL("/login", req.url));
-    if (token.disabledAt) return jsonError("Forbidden", 403);
+    if (token.disabledAt) return jsonError("Forbidden", 403, requestId);
     if (!token.role || !ADMIN_ROLES.has(String(token.role))) {
       return NextResponse.redirect(new URL("/portal", req.url));
     }
@@ -261,7 +314,7 @@ export async function middleware(req: NextRequest) {
 
   if (pathname.startsWith("/portal")) {
     if (!token?.sub) return NextResponse.redirect(new URL("/login", req.url));
-    if (token.disabledAt) return jsonError("Forbidden", 403);
+    if (token.disabledAt) return jsonError("Forbidden", 403, requestId);
     if (!token.role || !PORTAL_ROLES.has(String(token.role))) {
       return NextResponse.redirect(new URL("/admin", req.url));
     }
@@ -278,12 +331,9 @@ export async function middleware(req: NextRequest) {
   });
   response.headers.set("x-request-id", requestId);
   if (isApi) {
-    const origin = extractOriginFromRequest(req);
-    if (origin && isAllowedOriginValue(origin)) {
-      const headers = corsHeaders(corsOriginForResponse(req));
-      for (const [key, value] of Object.entries(headers)) {
-        response.headers.set(key, value);
-      }
+    const headers = corsHeaders(corsOriginForResponse(req));
+    for (const [key, value] of Object.entries(headers)) {
+      response.headers.set(key, value);
     }
   }
 

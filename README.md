@@ -63,11 +63,12 @@ The demo seed creates:
 ### Core
 - `APP_URL`
 - `NEXTAUTH_URL`
+- `ALLOWED_ORIGINS` (comma-separated full origins, optional; supports root + www)
 - `NEXTAUTH_SECRET`
 - `DATABASE_URL`
 - `TEST_DATABASE_URL`
-- `ALLOW_PROMO_BYPASS` (non-production only)
-- `PROMO_CODE_JAZAJ` (default `jazaj`)
+- `PROMO_JAZAJ_ENABLED` (set `true` to allow promo bypass)
+- `PROMO_JAZAJ_CODE` (default `jazaj`)
 - `BOOTSTRAP_ADMIN_ENABLED` (default `false`)
 - `BOOTSTRAP_ADMIN_EMAIL`
 - `BOOTSTRAP_ADMIN_PASSWORD`

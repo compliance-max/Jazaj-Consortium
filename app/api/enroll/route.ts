@@ -12,7 +12,7 @@ export async function POST(req: Request) {
   const logger = createLogger({ requestId, route: "/api/enroll", method: "POST" });
   const body = await req.json().catch(() => null);
   const parsed = enrollmentSchema.safeParse(body);
-  if (!parsed.success) return fail(parsed.error.issues[0]?.message || "Invalid payload", 422);
+  if (!parsed.success) return fail(parsed.error.issues[0]?.message || "Invalid payload", 422, { requestId });
 
   const ip = req.headers.get("x-forwarded-for") || "unknown";
   const limiter = await consumeRateLimit({
@@ -21,12 +21,12 @@ export async function POST(req: Request) {
     limit: 10,
     windowMs: 60 * 60_000
   });
-  if (!limiter.ok) return fail("Too many enrollment attempts", 429);
+  if (!limiter.ok) return fail("Too many enrollment attempts", 429, { requestId });
 
   const payload = normalizeEnrollmentInput(parsed.data);
   const code = (parsed.data.promoCode || "").trim().toLowerCase();
-  const expectedCode = (process.env.PROMO_CODE_JAZAJ || "jazaj").trim().toLowerCase();
-  const bypassAllowed = process.env.ALLOW_PROMO_BYPASS === "true" && process.env.NODE_ENV !== "production";
+  const expectedCode = (process.env.PROMO_JAZAJ_CODE || "jazaj").trim().toLowerCase();
+  const bypassAllowed = process.env.DEMO_MODE === "true" || process.env.PROMO_JAZAJ_ENABLED === "true";
   const promoMatches = code.length > 0 && code === expectedCode;
 
   if (process.env.NODE_ENV !== "production") {
@@ -44,7 +44,7 @@ export async function POST(req: Request) {
       limit: 20,
       windowMs: 60 * 60_000
     });
-    if (!promoLimiter.ok) return fail("Too many promo attempts", 429);
+    if (!promoLimiter.ok) return fail("Too many promo attempts", 429, { requestId });
   }
 
   const submission = await prisma.enrollmentSubmission.create({
@@ -86,9 +86,9 @@ export async function POST(req: Request) {
         }
       });
       if (process.env.NODE_ENV !== "production") {
-        return fail(error instanceof Error ? error.message : "Promo enrollment failed", 500);
+        return fail(error instanceof Error ? error.message : "Promo enrollment failed", 500, { requestId });
       }
-      return fail("Promo enrollment failed", 500);
+      return fail("Promo enrollment failed", 500, { requestId });
     }
   }
 
@@ -129,8 +129,8 @@ export async function POST(req: Request) {
       }
     });
     if (process.env.NODE_ENV !== "production") {
-      return fail(error instanceof Error ? error.message : "Checkout creation failed", 500);
+      return fail(error instanceof Error ? error.message : "Checkout creation failed", 500, { requestId });
     }
-    return fail("Checkout creation failed", 500);
+    return fail("Checkout creation failed", 500, { requestId });
   }
 }

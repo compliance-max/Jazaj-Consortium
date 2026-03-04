@@ -1,17 +1,22 @@
 import { fail, ok } from "@/lib/http";
 import { ensureEmployerActiveForMutation, ensurePortalWriteAccess, requirePortalContext } from "@/lib/auth/guard";
 import { createCheckoutForExistingPendingRequest } from "@/lib/services/test-requests";
+import { testRequestCheckoutSchema } from "@/lib/validation/test-request";
 
-export async function POST(_: Request, ctx: { params: { id: string } }) {
+export async function POST(req: Request, ctx: { params: { id: string } }) {
   try {
     const { user, employer } = await requirePortalContext();
     ensurePortalWriteAccess(user.role);
     ensureEmployerActiveForMutation(employer.status);
+    const body = await req.json().catch(() => ({}));
+    const parsed = testRequestCheckoutSchema.safeParse(body);
+    if (!parsed.success) return fail(parsed.error.issues[0]?.message || "Invalid payload", 422);
 
     const checkout = await createCheckoutForExistingPendingRequest({
       requestId: ctx.params.id,
       employerId: employer.id,
-      customerEmail: user.email || employer.email
+      customerEmail: user.email || employer.email,
+      promoCode: parsed.data.promoCode || null
     });
     return ok(checkout);
   } catch (error) {

@@ -3,7 +3,8 @@ import { z } from "zod";
 export const portalTestRequestCreateSchema = z.object({
   driverId: z.string().optional().nullable(),
   testType: z.enum(["DRUG", "ALCOHOL", "BOTH"]),
-  reasonDetail: z.enum(["PRE_EMPLOYMENT", "POST_ACCIDENT", "REASONABLE_SUSPICION", "USER_REQUEST"]).optional()
+  reasonDetail: z.enum(["PRE_EMPLOYMENT", "POST_ACCIDENT", "REASONABLE_SUSPICION", "USER_REQUEST"]).optional(),
+  promoCode: z.string().max(64).optional().nullable()
 });
 
 export const adminTestRequestCreateSchema = portalTestRequestCreateSchema.extend({
@@ -12,6 +13,10 @@ export const adminTestRequestCreateSchema = portalTestRequestCreateSchema.extend
 
 export const assignClinicSchema = z.object({
   clinicId: z.string().min(1)
+});
+
+export const testRequestCheckoutSchema = z.object({
+  promoCode: z.string().max(64).optional().nullable()
 });
 
 export const captureResultJsonSchema = z.object({

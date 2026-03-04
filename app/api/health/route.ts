@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { getRedisClient } from "@/lib/db/redis";
 import pkg from "@/package.json";
 import { createLogger } from "@/lib/logging/logger";
+import { configuredOrigins, parseOrigin } from "@/lib/security/origin";
 
 export async function GET(req: Request) {
   const requestId = req.headers.get("x-request-id") || crypto.randomUUID();
@@ -28,6 +29,15 @@ export async function GET(req: Request) {
     logger.error("Health check Redis ping failed");
   }
 
+  const appUrl = parseOrigin(process.env.APP_URL) || null;
+  const nextAuthUrl = parseOrigin(process.env.NEXTAUTH_URL) || null;
+  const allowedOrigins = configuredOrigins({
+    appUrl: process.env.APP_URL,
+    nextAuthUrl: process.env.NEXTAUTH_URL,
+    allowedOrigins: process.env.ALLOWED_ORIGINS,
+    nodeEnv: process.env.NODE_ENV
+  });
+
   logger.info("Health check completed", { db, redis });
 
   return ok({
@@ -36,6 +46,9 @@ export async function GET(req: Request) {
     gitSha: process.env.GIT_SHA || process.env.VERCEL_GIT_COMMIT_SHA || null,
     db,
     redis,
-    version: pkg.version
+    version: pkg.version,
+    appUrl,
+    nextAuthUrl,
+    allowedOriginsCount: allowedOrigins.size
   });
 }

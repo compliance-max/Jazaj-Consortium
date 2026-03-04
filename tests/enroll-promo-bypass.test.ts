@@ -21,12 +21,16 @@ describe("enrollment promo bypass", () => {
     });
     process.env = { ...previousEnv };
     process.env.NODE_ENV = "test";
-    process.env.ALLOW_PROMO_BYPASS = "false";
-    process.env.PROMO_CODE_JAZAJ = "jazaj";
+    process.env.DEMO_MODE = "false";
+    process.env.PROMO_JAZAJ_ENABLED = "false";
+    process.env.PROMO_JAZAJ_CODE = "jazaj";
+    process.env.ALLOW_EMAIL_CONSOLE_FALLBACK = "true";
+    process.env.POSTMARK_SERVER_TOKEN = "";
+    process.env.EMAIL_FROM = "";
   });
 
   test("promo code works in non-production when enabled and skips Stripe", async () => {
-    process.env.ALLOW_PROMO_BYPASS = "true";
+    process.env.PROMO_JAZAJ_ENABLED = "true";
 
     const { POST } = await import("@/app/api/enroll/route");
     const response = await POST(
@@ -97,7 +101,7 @@ describe("enrollment promo bypass", () => {
   });
 
   test("promo code is ignored when bypass is disabled", async () => {
-    process.env.ALLOW_PROMO_BYPASS = "false";
+    process.env.PROMO_JAZAJ_ENABLED = "false";
 
     const { POST } = await import("@/app/api/enroll/route");
     const response = await POST(
@@ -130,9 +134,9 @@ describe("enrollment promo bypass", () => {
     expect(employer).toBeNull();
   });
 
-  test("promo code is rejected in production mode", async () => {
+  test("promo code can be enabled in production mode with PROMO_JAZAJ_ENABLED", async () => {
     process.env.NODE_ENV = "production";
-    process.env.ALLOW_PROMO_BYPASS = "true";
+    process.env.PROMO_JAZAJ_ENABLED = "true";
 
     const { POST } = await import("@/app/api/enroll/route");
     const response = await POST(
@@ -155,12 +159,13 @@ describe("enrollment promo bypass", () => {
 
     expect(response.status).toBe(200);
     const payload = await response.json();
-    expect(payload.kind).toBe("STRIPE");
-    expect(createEnrollmentCheckoutSessionMock).toHaveBeenCalledTimes(1);
+    expect(payload.kind).toBe("PROMO");
+    expect(payload.success).toBe(true);
+    expect(createEnrollmentCheckoutSessionMock).not.toHaveBeenCalled();
   });
 
   test("wrong promo code does not bypass Stripe", async () => {
-    process.env.ALLOW_PROMO_BYPASS = "true";
+    process.env.PROMO_JAZAJ_ENABLED = "true";
 
     const { POST } = await import("@/app/api/enroll/route");
     const response = await POST(
@@ -189,7 +194,7 @@ describe("enrollment promo bypass", () => {
   });
 
   test("missing promoCode uses Stripe path", async () => {
-    process.env.ALLOW_PROMO_BYPASS = "true";
+    process.env.PROMO_JAZAJ_ENABLED = "true";
 
     const { POST } = await import("@/app/api/enroll/route");
     const response = await POST(

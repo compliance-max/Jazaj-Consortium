@@ -48,7 +48,8 @@ export async function POST(req: Request) {
       driverId: parsed.data.driverId || null,
       testType: parsed.data.testType,
       reason: "USER_REQUEST",
-      notes: parsed.data.reasonDetail || null
+      notes: parsed.data.reasonDetail || null,
+      promoCode: parsed.data.promoCode || null
     });
 
     return ok(created, 201);
