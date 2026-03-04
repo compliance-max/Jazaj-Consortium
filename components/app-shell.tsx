@@ -24,6 +24,7 @@ type NavItem = { href: string; label: string; icon: React.ComponentType<{ classN
 const adminNav: NavItem[] = [
   { href: "/admin", label: "Dashboard", icon: Home },
   { href: "/admin/employers", label: "Employers", icon: Building2 },
+  { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/test-requests", label: "Test Requests", icon: ClipboardList },
   { href: "/admin/results", label: "Results", icon: FlaskConical },
   { href: "/admin/random", label: "Random", icon: RefreshCw },
@@ -147,7 +148,15 @@ export function DashboardLayout({ children, mode }: { children: React.ReactNode;
       const session = (await sessionRes.json().catch(() => ({}))) as SessionPayload;
       if (!active) return;
       const role = session?.user?.role || "";
-      setRoleLabel(role === "CTPA_ADMIN" ? "Admin" : role === "CTPA_MANAGER" ? "Manager" : "Employer");
+      setRoleLabel(
+        role === "CTPA_ADMIN"
+          ? "Admin"
+          : role === "CTPA_MANAGER"
+            ? "Manager"
+            : role === "READONLY_AUDITOR"
+              ? "Auditor"
+              : "Employer"
+      );
       if (mode === "portal" && session?.user?.employerId) {
         const companyRes = await fetch("/api/portal/company");
         const companyPayload = await companyRes.json().catch(() => ({}));

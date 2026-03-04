@@ -10,8 +10,8 @@ beforeAll(async () => {
     ALTER TABLE "EmployerUser"
     ADD CONSTRAINT "EmployerUser_role_employer_check"
     CHECK (
-      ("role" = 'EMPLOYER_DER' AND "employerId" IS NOT NULL)
-      OR ("role" IN ('CTPA_ADMIN', 'CTPA_MANAGER', 'READONLY_AUDITOR') AND "employerId" IS NULL)
+      ("role" IN ('EMPLOYER_DER', 'READONLY_AUDITOR') AND "employerId" IS NOT NULL)
+      OR ("role" IN ('CTPA_ADMIN', 'CTPA_MANAGER') AND "employerId" IS NULL)
     );
   `);
   await testPrisma.$executeRawUnsafe(`

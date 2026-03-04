@@ -12,6 +12,14 @@ import { StatusBadge } from "@/components/status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DrawerDialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 
 type EmployerDetail = {
@@ -87,16 +95,45 @@ type EmployerDetail = {
   }>;
 };
 
+type EmployerUserRow = {
+  id: string;
+  fullName: string;
+  email: string;
+  role: "EMPLOYER_DER" | "READONLY_AUDITOR";
+  employerId: string;
+  disabledAt: string | null;
+  invitedAt: string | null;
+  passwordSetAt: string | null;
+  lastLoginAt: string | null;
+  emailVerifiedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export default function EmployerDetailPage({ params }: { params: { id: string } }) {
   const [employer, setEmployer] = useState<EmployerDetail | null>(null);
+  const [employerUsers, setEmployerUsers] = useState<EmployerUserRow[]>([]);
   const [migrateDrivers, setMigrateDrivers] = useState(false);
   const [migrationSummary, setMigrationSummary] = useState<{
     movedDrivers: number;
     closedMemberships: number;
     createdMemberships: number;
   } | null>(null);
+  const [viewerRole, setViewerRole] = useState("");
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [userModalOpen, setUserModalOpen] = useState(false);
+  const [userForm, setUserForm] = useState<{
+    email: string;
+    role: "EMPLOYER_DER" | "READONLY_AUDITOR";
+  }>({
+    email: "",
+    role: "EMPLOYER_DER"
+  });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const isAdmin = viewerRole === "CTPA_ADMIN";
+  const canManageEmployerUsers = viewerRole === "CTPA_ADMIN" || viewerRole === "CTPA_MANAGER";
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -110,9 +147,39 @@ export default function EmployerDetailPage({ params }: { params: { id: string } 
     setEmployer(payload.employer);
   }, [params.id]);
 
+  const loadEmployerUsers = useCallback(async () => {
+    setUsersLoading(true);
+    const res = await fetch(`/api/admin/employers/${params.id}/users`);
+    const payload = await res.json().catch(() => ({}));
+    setUsersLoading(false);
+    if (!res.ok) {
+      setError(payload.error || "Failed to load employer users");
+      return;
+    }
+    setEmployerUsers(payload.users || []);
+  }, [params.id]);
+
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    let active = true;
+    async function loadSessionRole() {
+      const res = await fetch("/api/auth/session");
+      const payload = await res.json().catch(() => ({}));
+      if (!active) return;
+      setViewerRole(payload?.user?.role || "");
+    }
+    void loadSessionRole();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    void loadEmployerUsers();
+  }, [loadEmployerUsers]);
 
   async function onSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -184,6 +251,72 @@ export default function EmployerDetailPage({ params }: { params: { id: string } 
     });
   }
 
+  async function createEmployerUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canManageEmployerUsers) {
+      toast.error("Only admins and managers can create employer users.");
+      return;
+    }
+
+    const res = await fetch(`/api/admin/employers/${params.id}/users`, {
+      method: "POST",
+      headers: withCsrfHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        email: userForm.email.trim(),
+        role: userForm.role
+      })
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast.error("Unable to create user", { description: payload.error || "User creation failed." });
+      return;
+    }
+
+    toast.success("Employer user invited", { description: "Verification and set-password emails sent." });
+    setUserModalOpen(false);
+    setUserForm({ email: "", role: "EMPLOYER_DER" });
+    await loadEmployerUsers();
+  }
+
+  async function resendInvite(userId: string) {
+    if (!canManageEmployerUsers) {
+      toast.error("Only admins and managers can resend invites.");
+      return;
+    }
+    const res = await fetch(`/api/admin/users/${userId}/resend-invite`, {
+      method: "POST",
+      headers: withCsrfHeaders()
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast.error("Resend invite failed", { description: payload.error || "Unable to resend invite." });
+      return;
+    }
+    toast.success("Invite resent");
+    await loadEmployerUsers();
+  }
+
+  async function toggleUserDisabled(user: EmployerUserRow) {
+    if (!isAdmin) {
+      toast.error("Only CTPA admins can enable or disable users.");
+      return;
+    }
+    const res = await fetch(`/api/admin/users/${user.id}`, {
+      method: "PATCH",
+      headers: withCsrfHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        disabled: !user.disabledAt
+      })
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast.error("Status update failed", { description: payload.error || "Unable to update user status." });
+      return;
+    }
+    toast.success(user.disabledAt ? "User enabled" : "User disabled");
+    await loadEmployerUsers();
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader title="Employer Detail" subtitle="Profile, drivers, random history, payments, and documents." />
@@ -205,7 +338,44 @@ export default function EmployerDetailPage({ params }: { params: { id: string } 
           <CardContent className="pt-6">{loading ? "Loading employer..." : "No employer found."}</CardContent>
         </Card>
       ) : (
-        <Tabs defaultValue="overview">
+        <>
+          <Dialog open={userModalOpen} onOpenChange={setUserModalOpen}>
+            <DrawerDialogContent>
+              <DialogHeader>
+                <DialogTitle>Add Employer User</DialogTitle>
+                <DialogDescription>Create a DER or read-only auditor and send invite emails.</DialogDescription>
+              </DialogHeader>
+              <form className="grid gap-3" onSubmit={createEmployerUser}>
+                <Input
+                  type="email"
+                  placeholder="user@company.com"
+                  value={userForm.email}
+                  onChange={(e) => setUserForm((prev) => ({ ...prev, email: e.target.value }))}
+                  required
+                />
+                <Select
+                  value={userForm.role}
+                  onChange={(e) =>
+                    setUserForm((prev) => ({
+                      ...prev,
+                      role: e.target.value as "EMPLOYER_DER" | "READONLY_AUDITOR"
+                    }))
+                  }
+                >
+                  <option value="EMPLOYER_DER">EMPLOYER_DER</option>
+                  <option value="READONLY_AUDITOR">READONLY_AUDITOR</option>
+                </Select>
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setUserModalOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit">Send Invite</Button>
+                </DialogFooter>
+              </form>
+            </DrawerDialogContent>
+          </Dialog>
+
+          <Tabs defaultValue="overview">
           <TabsList>
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="drivers">Drivers</TabsTrigger>
@@ -272,7 +442,7 @@ export default function EmployerDetailPage({ params }: { params: { id: string } 
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">DER Users</p>
-                  <p className="font-medium">{employer.users.length}</p>
+                  <p className="font-medium">{employerUsers.length}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Recent Requests</p>
@@ -289,6 +459,67 @@ export default function EmployerDetailPage({ params }: { params: { id: string } 
                 </AlertDescription>
               </Alert>
             ) : null}
+
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-3">
+                  <CardTitle>Users</CardTitle>
+                  {canManageEmployerUsers ? (
+                    <Button size="sm" onClick={() => setUserModalOpen(true)}>
+                      Add User
+                    </Button>
+                  ) : null}
+                </div>
+              </CardHeader>
+              <CardContent>
+                <Table compact>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Role</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Last Login</TableHead>
+                      <TableHead>Invited</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {employerUsers.map((user) => (
+                      <TableRow key={user.id}>
+                        <TableCell>
+                          <div className="font-medium">{user.email}</div>
+                          <div className="text-xs text-muted-foreground">{user.fullName}</div>
+                        </TableCell>
+                        <TableCell>{user.role}</TableCell>
+                        <TableCell>
+                          {user.disabledAt ? <Badge variant="destructive">Disabled</Badge> : <Badge variant="success">Active</Badge>}
+                        </TableCell>
+                        <TableCell>{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : "Never"}</TableCell>
+                        <TableCell>{user.invitedAt ? new Date(user.invitedAt).toLocaleString() : "-"}</TableCell>
+                        <TableCell className="space-x-2 text-right">
+                          <Button size="sm" variant="outline" onClick={() => void resendInvite(user.id)} disabled={!canManageEmployerUsers}>
+                            Resend Invite
+                          </Button>
+                          <Button size="sm" variant={user.disabledAt ? "outline" : "destructive"} onClick={() => void toggleUserDisabled(user)} disabled={!isAdmin}>
+                            {user.disabledAt ? "Enable" : "Disable"}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {usersLoading && employerUsers.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6}>Loading employer users...</TableCell>
+                      </TableRow>
+                    ) : null}
+                    {!usersLoading && employerUsers.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6}>No users yet.</TableCell>
+                      </TableRow>
+                    ) : null}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="drivers">
@@ -446,7 +677,8 @@ export default function EmployerDetailPage({ params }: { params: { id: string } 
               </CardContent>
             </Card>
           </TabsContent>
-        </Tabs>
+          </Tabs>
+        </>
       )}
     </div>
   );

@@ -181,7 +181,8 @@ async function fulfillEnrollmentSubmission(input: EnrollmentFulfillmentInput) {
         fullName: payload.contactName,
         role: "EMPLOYER_DER",
         employerId: employer.id,
-        passwordSet: false
+        passwordSet: false,
+        invitedAt: new Date()
       }
     });
 

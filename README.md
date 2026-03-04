@@ -68,6 +68,10 @@ The demo seed creates:
 - `TEST_DATABASE_URL`
 - `ALLOW_PROMO_BYPASS` (non-production only)
 - `PROMO_CODE_JAZAJ` (default `jazaj`)
+- `BOOTSTRAP_ADMIN_ENABLED` (default `false`)
+- `BOOTSTRAP_ADMIN_EMAIL`
+- `BOOTSTRAP_ADMIN_PASSWORD`
+- `BOOTSTRAP_ADMIN_FORCE_RESET` (default `true`)
 
 ### Redis/BullMQ
 - `REDIS_URL` (or `REDIS_HOST`/`REDIS_PORT`)
@@ -220,7 +224,7 @@ Run:
 - Set required secrets in Render environment variables.
 - Web and worker both run `prisma migrate deploy` before startup.
 - Bootstrap the first production admin in Render Shell:
-  - `ADMIN_BOOTSTRAP_EMAIL=you@jazaj.com ADMIN_BOOTSTRAP_PASSWORD='StrongPassHere!' npm run bootstrap:admin`
+  - `BOOTSTRAP_ADMIN_ENABLED=true BOOTSTRAP_ADMIN_EMAIL=you@jazaj.com BOOTSTRAP_ADMIN_PASSWORD='StrongPassHere!' BOOTSTRAP_ADMIN_FORCE_RESET=true npm run bootstrap-admin`
 
 ## Production readiness checklist
 1. Postmark DNS:
@@ -242,6 +246,6 @@ Run:
 6. Secrets rotation:
    - Rotate `NEXTAUTH_SECRET`, `INTERNAL_JOB_TOKEN`, `RANDOM_PROOF_SECRET`, API keys on a schedule.
 7. Admin bootstrap procedure:
-   - Create first admin user directly in DB/seed with `CTPA_ADMIN`.
-   - Immediately set strong password and verified email.
+   - Set `BOOTSTRAP_ADMIN_ENABLED=true` plus bootstrap email/password env vars.
+   - Run `npm run bootstrap-admin` (or let container startup run it automatically).
    - Disable or remove bootstrap credentials after first login.

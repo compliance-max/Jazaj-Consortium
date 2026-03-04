@@ -15,5 +15,8 @@ until npx prisma migrate deploy; do
   sleep 5
 done
 
+echo "[start-web] Running bootstrap-admin..."
+npm run bootstrap-admin
+
 echo "[start-web] Starting Next.js on 0.0.0.0:${PORT:-3000}"
 exec npx next start -H 0.0.0.0 -p "${PORT:-3000}"

@@ -17,30 +17,37 @@ async function main() {
   const now = new Date();
   const year = 2026;
   const localBaseUrl = process.env.APP_URL || "http://localhost:3000";
+  const demoMode = (process.env.DEMO_MODE || "").toLowerCase() === "true";
 
-  const adminPasswordHash = await bcrypt.hash("Password123!", 12);
   const derPasswordHash = await bcrypt.hash("Password123!", 12);
 
-  const admin = await prisma.employerUser.upsert({
-    where: { email: "admin@example.com" },
-    update: {
-      fullName: "CTPA Admin",
-      role: "CTPA_ADMIN",
-      employerId: null,
-      passwordHash: adminPasswordHash,
-      passwordSet: true,
-      emailVerifiedAt: now
-    },
-    create: {
-      email: "admin@example.com",
-      fullName: "CTPA Admin",
-      role: "CTPA_ADMIN",
-      employerId: null,
-      passwordHash: adminPasswordHash,
-      passwordSet: true,
-      emailVerifiedAt: now
-    }
-  });
+  let adminUserId: string | null = null;
+  if (demoMode) {
+    const adminPasswordHash = await bcrypt.hash("Password123!", 12);
+    const admin = await prisma.employerUser.upsert({
+      where: { email: "admin@example.com" },
+      update: {
+        fullName: "CTPA Admin",
+        role: "CTPA_ADMIN",
+        employerId: null,
+        passwordHash: adminPasswordHash,
+        passwordSet: true,
+        passwordSetAt: now,
+        emailVerifiedAt: now
+      },
+      create: {
+        email: "admin@example.com",
+        fullName: "CTPA Admin",
+        role: "CTPA_ADMIN",
+        employerId: null,
+        passwordHash: adminPasswordHash,
+        passwordSet: true,
+        passwordSetAt: now,
+        emailVerifiedAt: now
+      }
+    });
+    adminUserId = admin.id;
+  }
 
   const existingEmployer = await prisma.employer.findFirst({
     where: { email: "ops@bestwayfreight.com" },
@@ -96,6 +103,8 @@ async function main() {
       employerId: employer.id,
       passwordHash: derPasswordHash,
       passwordSet: true,
+      passwordSetAt: now,
+      invitedAt: now,
       emailVerifiedAt: now
     },
     create: {
@@ -105,6 +114,8 @@ async function main() {
       employerId: employer.id,
       passwordHash: derPasswordHash,
       passwordSet: true,
+      passwordSetAt: now,
+      invitedAt: now,
       emailVerifiedAt: now
     }
   });
@@ -176,7 +187,7 @@ async function main() {
         driverId: d.id,
         poolId: pool.id,
         effectiveStart: new Date(Date.UTC(2026, 0, 1)),
-        changedByUserId: admin.id,
+        changedByUserId: adminUserId,
         reason: "seed_demo_assignment"
       }
     });
@@ -430,7 +441,7 @@ async function main() {
       {
         conversationId: conversation.id,
         senderType: "ADMIN",
-        senderUserId: admin.id,
+        senderUserId: adminUserId,
         messageText: "Clinic instructions are being finalized and will be sent shortly.",
         readByMemberAt: now
       }
@@ -469,7 +480,11 @@ async function main() {
   console.log("Demo seed complete.");
   console.log(`Local base URL: ${localBaseUrl}`);
   console.log(`Seeded employer: ${employer.legalName} (DOT: ${employer.dotNumber || "N/A"})`);
-  console.log("Admin login: admin@example.com / Password123!");
+  if (demoMode) {
+    console.log("Admin login: admin@example.com / Password123!");
+  } else {
+    console.log("Admin demo login skipped (DEMO_MODE=false).");
+  }
   console.log("DER demo login: der@example.com / Password123!");
 }
 

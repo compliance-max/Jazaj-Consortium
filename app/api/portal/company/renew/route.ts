@@ -1,5 +1,5 @@
 import { fail, ok } from "@/lib/http";
-import { requirePortalContext } from "@/lib/auth/guard";
+import { ensureEmployerActiveForMutation, ensurePortalWriteAccess, requirePortalContext } from "@/lib/auth/guard";
 import { createRenewalCheckoutSession } from "@/lib/services/stripe-checkout";
 import { createCheckoutConfirmToken } from "@/lib/services/checkout-confirm-token";
 import { PRICE_RENEWAL_ANNUAL_CENTS } from "@/lib/billing/pricing";
@@ -7,6 +7,8 @@ import { PRICE_RENEWAL_ANNUAL_CENTS } from "@/lib/billing/pricing";
 export async function POST() {
   try {
     const { user, employer } = await requirePortalContext();
+    ensurePortalWriteAccess(user.role);
+    ensureEmployerActiveForMutation(employer.status);
     const session = await createRenewalCheckoutSession({
       employerId: employer.id,
       customerEmail: user.email || employer.email,
@@ -23,6 +25,8 @@ export async function POST() {
       confirmToken: confirmToken.raw
     });
   } catch (error) {
+    if (error instanceof Error && error.message === "FORBIDDEN") return fail("Forbidden", 403);
+    if (error instanceof Error && error.message === "EMPLOYER_INACTIVE") return fail("Employer is inactive", 403);
     if (process.env.NODE_ENV !== "production") {
       return fail(error instanceof Error ? error.message : "Unauthorized", 401);
     }

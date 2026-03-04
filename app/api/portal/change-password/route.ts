@@ -30,7 +30,7 @@ export async function POST(req: Request) {
     const hash = await hashPassword(parsed.data.newPassword);
     await prisma.employerUser.update({
       where: { id: dbUser.id },
-      data: { passwordHash: hash, passwordSet: true }
+      data: { passwordHash: hash, passwordSet: true, passwordSetAt: new Date() }
     });
 
     return ok({ updated: true });

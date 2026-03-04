@@ -99,7 +99,8 @@ export async function createEmployerWithDer(raw: {
         fullName: input.derFullName,
         role: "EMPLOYER_DER",
         employerId: employer.id,
-        passwordSet: false
+        passwordSet: false,
+        invitedAt: new Date()
       }
     });
 
@@ -157,6 +158,10 @@ export async function getEmployerDetail(id: string) {
             employerId: true,
             emailVerifiedAt: true,
             passwordSet: true,
+            disabledAt: true,
+            invitedAt: true,
+            passwordSetAt: true,
+            lastLoginAt: true,
             createdAt: true
           }
         },

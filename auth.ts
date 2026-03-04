@@ -34,9 +34,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           where: { email: parsed.data.email.toLowerCase() }
         });
 
+        if (user?.disabledAt) return null;
         if (!user?.passwordHash) return null;
         const valid = await verifyPassword(parsed.data.password, user.passwordHash);
         if (!valid) return null;
+
+        prisma.employerUser
+          .update({
+            where: { id: user.id },
+            data: { lastLoginAt: new Date() }
+          })
+          .catch(() => {
+            // Non-blocking telemetry field; do not fail login on write errors.
+          });
 
         return {
           id: user.id,
@@ -44,7 +54,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           name: user.fullName,
           role: user.role,
           employerId: user.employerId,
-          emailVerifiedAt: user.emailVerifiedAt ? user.emailVerifiedAt.toISOString() : null
+          emailVerifiedAt: user.emailVerifiedAt ? user.emailVerifiedAt.toISOString() : null,
+          disabledAt: user.disabledAt ? user.disabledAt.toISOString() : null
         };
       }
     })
@@ -55,6 +66,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.role = user.role as UserRole;
         token.employerId = (user.employerId as string | null) || null;
         token.emailVerifiedAt = (user.emailVerifiedAt as string | null) || null;
+        token.disabledAt = (user.disabledAt as string | null) || null;
       }
       return token;
     },
@@ -63,6 +75,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       session.user.role = (token.role as UserRole) || "EMPLOYER_DER";
       session.user.employerId = (token.employerId as string | null) || null;
       session.user.emailVerifiedAt = (token.emailVerifiedAt as string | null) || null;
+      session.user.disabledAt = (token.disabledAt as string | null) || null;
       return session;
     }
   }

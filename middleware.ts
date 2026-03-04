@@ -3,7 +3,7 @@ import { getToken } from "next-auth/jwt";
 import { createLogger } from "@/lib/logging/logger";
 
 const ADMIN_ROLES = new Set(["CTPA_ADMIN", "CTPA_MANAGER"]);
-const PORTAL_ROLES = new Set(["EMPLOYER_DER"]);
+const PORTAL_ROLES = new Set(["EMPLOYER_DER", "READONLY_AUDITOR"]);
 const STATE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const CSRF_COOKIE_NAME = "ctpa_csrf";
 const CSRF_HEADER_NAME = "x-csrf-token";
@@ -78,6 +78,12 @@ function isOriginProtectedPath(pathname: string) {
   if (!pathname.startsWith("/api/")) return false;
   if (pathname === "/api/stripe/webhook") return false;
   if (pathname.startsWith("/api/internal/")) return false;
+  // NextAuth credential/session internals may omit Origin in some deployments/proxies.
+  // Keep token/password mutation routes protected, but exempt callback internals.
+  if (pathname.startsWith("/api/auth/callback/")) return false;
+  if (pathname === "/api/auth/signin") return false;
+  if (pathname === "/api/auth/signout") return false;
+  if (pathname === "/api/auth/login") return false;
   return true;
 }
 
@@ -182,6 +188,11 @@ export async function middleware(req: NextRequest) {
       denied.headers.set("x-request-id", requestId);
       return denied;
     }
+    if (token.disabledAt) {
+      const denied = jsonError("Forbidden", 403);
+      denied.headers.set("x-request-id", requestId);
+      return denied;
+    }
     if (!token.role || !ADMIN_ROLES.has(String(token.role))) {
       const denied = jsonError("Forbidden", 403);
       denied.headers.set("x-request-id", requestId);
@@ -192,6 +203,11 @@ export async function middleware(req: NextRequest) {
   if (pathname.startsWith("/api/portal/")) {
     if (!token?.sub) {
       const denied = jsonError("Unauthorized", 401);
+      denied.headers.set("x-request-id", requestId);
+      return denied;
+    }
+    if (token.disabledAt) {
+      const denied = jsonError("Forbidden", 403);
       denied.headers.set("x-request-id", requestId);
       return denied;
     }
@@ -210,10 +226,16 @@ export async function middleware(req: NextRequest) {
       denied.headers.set("x-request-id", requestId);
       return denied;
     }
+    if (isMutation(req) && token.role === "READONLY_AUDITOR") {
+      const denied = jsonError("Forbidden", 403);
+      denied.headers.set("x-request-id", requestId);
+      return denied;
+    }
   }
 
   if (pathname.startsWith("/admin")) {
     if (!token?.sub) return NextResponse.redirect(new URL("/login", req.url));
+    if (token.disabledAt) return jsonError("Forbidden", 403);
     if (!token.role || !ADMIN_ROLES.has(String(token.role))) {
       return NextResponse.redirect(new URL("/portal", req.url));
     }
@@ -221,6 +243,7 @@ export async function middleware(req: NextRequest) {
 
   if (pathname.startsWith("/portal")) {
     if (!token?.sub) return NextResponse.redirect(new URL("/login", req.url));
+    if (token.disabledAt) return jsonError("Forbidden", 403);
     if (!token.role || !PORTAL_ROLES.has(String(token.role))) {
       return NextResponse.redirect(new URL("/admin", req.url));
     }

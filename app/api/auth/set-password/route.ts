@@ -31,6 +31,7 @@ export async function POST(req: Request) {
     data: {
       passwordHash: hash,
       passwordSet: true,
+      passwordSetAt: new Date(),
       emailVerifiedAt: consumed.token.user.emailVerifiedAt || new Date()
     }
   });

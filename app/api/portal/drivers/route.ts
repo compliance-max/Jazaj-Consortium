@@ -1,5 +1,5 @@
 import { fail, ok } from "@/lib/http";
-import { ensureEmployerActiveForMutation, requirePortalContext } from "@/lib/auth/guard";
+import { ensureEmployerActiveForMutation, ensurePortalWriteAccess, requirePortalContext } from "@/lib/auth/guard";
 import { createEmployerDriver, deactivateEmployerDriver, listEmployerDrivers, updateEmployerDriver } from "@/lib/services/drivers";
 import { driverCreateSchema, driverDeactivateSchema, driverUpdateSchema } from "@/lib/validation/driver";
 
@@ -16,6 +16,7 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const { user, employer } = await requirePortalContext();
+    ensurePortalWriteAccess(user.role);
     ensureEmployerActiveForMutation(employer.status);
 
     const body = await req.json().catch(() => null);
@@ -28,6 +29,7 @@ export async function POST(req: Request) {
     if (error instanceof Error && error.message === "EMPLOYER_INACTIVE") {
       return fail("Employer is inactive", 403);
     }
+    if (error instanceof Error && error.message === "FORBIDDEN") return fail("Forbidden", 403);
     return fail("Unauthorized", 401);
   }
 }
@@ -35,6 +37,7 @@ export async function POST(req: Request) {
 export async function PUT(req: Request) {
   try {
     const { user, employer } = await requirePortalContext();
+    ensurePortalWriteAccess(user.role);
     ensureEmployerActiveForMutation(employer.status);
 
     const body = await req.json().catch(() => null);
@@ -48,6 +51,7 @@ export async function PUT(req: Request) {
     if (error instanceof Error && error.message === "EMPLOYER_INACTIVE") {
       return fail("Employer is inactive", 403);
     }
+    if (error instanceof Error && error.message === "FORBIDDEN") return fail("Forbidden", 403);
     return fail("Unauthorized", 401);
   }
 }
@@ -55,6 +59,7 @@ export async function PUT(req: Request) {
 export async function DELETE(req: Request) {
   try {
     const { user, employer } = await requirePortalContext();
+    ensurePortalWriteAccess(user.role);
     ensureEmployerActiveForMutation(employer.status);
 
     const body = await req.json().catch(() => null);
@@ -68,6 +73,7 @@ export async function DELETE(req: Request) {
     if (error instanceof Error && error.message === "EMPLOYER_INACTIVE") {
       return fail("Employer is inactive", 403);
     }
+    if (error instanceof Error && error.message === "FORBIDDEN") return fail("Forbidden", 403);
     return fail("Unauthorized", 401);
   }
 }

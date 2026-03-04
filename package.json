@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "prisma:generate": "prisma generate",
     "seed:demo": "node scripts/seed-demo.js",
-    "bootstrap:admin": "node scripts/bootstrap-admin.js",
+    "bootstrap-admin": "tsx scripts/bootstrap-admin.ts",
+    "bootstrap:admin": "npm run bootstrap-admin",
     "db:reset": "node scripts/db-reset.js",
     "db:check": "npx prisma migrate status && npx prisma validate && npx prisma generate",
     "ci:migrate:test": "node scripts/ci-migrate-test.js"

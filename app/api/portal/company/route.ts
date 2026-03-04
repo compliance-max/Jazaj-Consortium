@@ -1,5 +1,5 @@
 import { fail, ok } from "@/lib/http";
-import { ensureEmployerActiveForMutation, requirePortalContext } from "@/lib/auth/guard";
+import { ensureEmployerActiveForMutation, ensurePortalWriteAccess, requirePortalContext } from "@/lib/auth/guard";
 import { prisma } from "@/lib/db/prisma";
 import { normalizePortalCompanyUpdateInput, portalCompanyUpdateSchema } from "@/lib/validation/employer";
 
@@ -43,7 +43,8 @@ export async function GET() {
 
 export async function PUT(req: Request) {
   try {
-    const { employer } = await requirePortalContext();
+    const { user, employer } = await requirePortalContext();
+    ensurePortalWriteAccess(user.role);
     ensureEmployerActiveForMutation(employer.status);
 
     const body = await req.json().catch(() => null);
@@ -80,6 +81,9 @@ export async function PUT(req: Request) {
   } catch (error) {
     if (error instanceof Error && error.message === "EMPLOYER_INACTIVE") {
       return fail("Employer is inactive", 403);
+    }
+    if (error instanceof Error && error.message === "FORBIDDEN") {
+      return fail("Forbidden", 403);
     }
     return fail("Unauthorized", 401);
   }

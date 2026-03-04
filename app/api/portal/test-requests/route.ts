@@ -1,5 +1,5 @@
 import { fail, ok } from "@/lib/http";
-import { ensureEmployerActiveForMutation, requirePortalContext } from "@/lib/auth/guard";
+import { ensureEmployerActiveForMutation, ensurePortalWriteAccess, requirePortalContext } from "@/lib/auth/guard";
 import { createTestRequestWithCheckout, listPortalTestRequests } from "@/lib/services/test-requests";
 import { portalTestRequestCreateSchema } from "@/lib/validation/test-request";
 
@@ -16,6 +16,7 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const { user, employer } = await requirePortalContext();
+    ensurePortalWriteAccess(user.role);
     ensureEmployerActiveForMutation(employer.status);
 
     const body = await req.json().catch(() => null);
@@ -34,6 +35,7 @@ export async function POST(req: Request) {
 
     return ok(created, 201);
   } catch (error) {
+    if (error instanceof Error && error.message === "FORBIDDEN") return fail("Forbidden", 403);
     if (error instanceof Error && error.message === "EMPLOYER_INACTIVE") {
       return fail("Employer is inactive", 403);
     }

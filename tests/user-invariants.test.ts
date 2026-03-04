@@ -20,7 +20,14 @@ describe("EmployerUser role/employer invariants", () => {
         role: "EMPLOYER_DER",
         employerId: null
       })
-    ).toThrow("EMPLOYER_DER_REQUIRES_EMPLOYER");
+    ).toThrow("EMPLOYER_SCOPED_ROLE_REQUIRES_EMPLOYER");
+
+    expect(() =>
+      validateEmployerUserInvariant({
+        role: "READONLY_AUDITOR",
+        employerId: null
+      })
+    ).toThrow("EMPLOYER_SCOPED_ROLE_REQUIRES_EMPLOYER");
   });
 
   test("db check constraint enforces invariants", async () => {
@@ -50,6 +57,17 @@ describe("EmployerUser role/employer invariants", () => {
           email: "bad-der@example.com",
           fullName: "Bad Der",
           role: "EMPLOYER_DER",
+          employerId: null
+        }
+      })
+    ).rejects.toBeTruthy();
+
+    await expect(
+      testPrisma.employerUser.create({
+        data: {
+          email: "bad-readonly@example.com",
+          fullName: "Bad Readonly",
+          role: "READONLY_AUDITOR",
           employerId: null
         }
       })

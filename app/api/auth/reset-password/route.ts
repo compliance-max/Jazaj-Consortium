@@ -30,7 +30,8 @@ export async function POST(req: Request) {
     where: { id: consumed.token.userId },
     data: {
       passwordHash: hash,
-      passwordSet: true
+      passwordSet: true,
+      passwordSetAt: new Date()
     }
   });
 
