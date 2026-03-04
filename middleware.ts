@@ -25,8 +25,22 @@ function configuredOrigins() {
   const configured = new Set<string>();
   const appOrigin = parseOrigin(process.env.APP_URL);
   const nextAuthOrigin = parseOrigin(process.env.NEXTAUTH_URL);
-  if (appOrigin) configured.add(appOrigin);
-  if (nextAuthOrigin) configured.add(nextAuthOrigin);
+  for (const origin of [appOrigin, nextAuthOrigin]) {
+    if (!origin) continue;
+    configured.add(origin);
+    try {
+      const url = new URL(origin);
+      if (url.hostname.startsWith("www.")) {
+        url.hostname = url.hostname.slice(4);
+        configured.add(url.origin);
+      } else {
+        url.hostname = `www.${url.hostname}`;
+        configured.add(url.origin);
+      }
+    } catch {
+      // ignore malformed origin variants
+    }
+  }
   if (!appOrigin && !nextAuthOrigin) {
     configured.add("http://localhost:3000");
   }
@@ -101,7 +115,11 @@ function extractOriginFromRequest(req: NextRequest) {
 
 function isAllowedOrigin(req: NextRequest) {
   const requestOrigin = extractOriginFromRequest(req);
-  if (!requestOrigin) return false;
+  if (!requestOrigin) {
+    const secFetchSite = (req.headers.get("sec-fetch-site") || "").toLowerCase();
+    if (!["same-origin", "same-site", "none"].includes(secFetchSite)) return false;
+    return isAllowedOriginValue(req.nextUrl.origin);
+  }
   return isAllowedOriginValue(requestOrigin);
 }
 
