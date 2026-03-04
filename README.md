@@ -63,8 +63,10 @@ The demo seed creates:
 ### Core
 - `APP_URL`
 - `NEXTAUTH_URL`
+- Production must be `https://jazaj.com` for both `APP_URL` and `NEXTAUTH_URL`.
 - `ALLOWED_ORIGINS` (comma-separated full origins, optional; supports root + www)
 - `NEXTAUTH_SECRET`
+- `AUTH_SECRET` (must match `NEXTAUTH_SECRET` if set)
 - `DATABASE_URL`
 - `TEST_DATABASE_URL`
 - `PROMO_JAZAJ_ENABLED` (set `true` to allow promo bypass)

@@ -5,6 +5,7 @@ import {
   isAllowedOriginValue as isAllowedOriginValueFromConfig,
   primaryAllowedOrigin as primaryAllowedOriginFromConfig
 } from "@/lib/security/origin";
+import { getAuthSecret } from "@/lib/config/runtime-env";
 
 const ADMIN_ROLES = new Set(["CTPA_ADMIN", "CTPA_MANAGER"]);
 const PORTAL_ROLES = new Set(["EMPLOYER_DER", "READONLY_AUDITOR"]);
@@ -50,14 +51,9 @@ function isMutation(req: NextRequest) {
 
 function isOriginProtectedPath(pathname: string) {
   if (!pathname.startsWith("/api/")) return false;
+  if (pathname.startsWith("/api/auth/")) return false;
   if (pathname === "/api/stripe/webhook") return false;
   if (pathname.startsWith("/api/internal/")) return false;
-  // NextAuth credential/session internals may omit Origin in some deployments/proxies.
-  // Keep token/password mutation routes protected, but exempt callback internals.
-  if (pathname.startsWith("/api/auth/callback/")) return false;
-  if (pathname === "/api/auth/signin") return false;
-  if (pathname === "/api/auth/signout") return false;
-  if (pathname === "/api/auth/login") return false;
   return true;
 }
 
@@ -150,12 +146,22 @@ export async function middleware(req: NextRequest) {
     route: req.nextUrl.pathname
   });
   const pathname = req.nextUrl.pathname;
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET });
+  if (
+    process.env.NODE_ENV === "production" &&
+    req.nextUrl.hostname === "www.jazaj.com"
+  ) {
+    const target = new URL(req.url);
+    target.protocol = "https:";
+    target.hostname = "jazaj.com";
+    return NextResponse.redirect(target, 308);
+  }
+
+  const token = await getToken({ req, secret: getAuthSecret() });
   const isApi = isApiPath(pathname);
   const requestHeaders = new Headers(req.headers);
   requestHeaders.set("x-request-id", requestId);
 
-  if (isApi && req.method === "OPTIONS") {
+  if (isApi && req.method === "OPTIONS" && !pathname.startsWith("/api/auth/")) {
     if (!isAllowedOrigin(req)) {
       return rejectWithLog({
         logger,
@@ -321,7 +327,7 @@ export async function middleware(req: NextRequest) {
     }
   });
   response.headers.set("x-request-id", requestId);
-  if (isApi) {
+  if (isApi && !pathname.startsWith("/api/auth/")) {
     const headers = corsHeaders(corsOriginForResponse(req));
     for (const [key, value] of Object.entries(headers)) {
       response.headers.set(key, value);

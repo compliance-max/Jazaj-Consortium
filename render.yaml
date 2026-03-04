@@ -28,7 +28,7 @@ services:
       - key: NEXTAUTH_SECRET
         generateValue: true
       - key: AUTH_SECRET
-        generateValue: true
+        sync: false
       - key: INTERNAL_JOB_TOKEN
         generateValue: true
       - key: RANDOM_PROOF_SECRET

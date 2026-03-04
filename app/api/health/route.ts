@@ -4,6 +4,7 @@ import { getRedisClient } from "@/lib/db/redis";
 import pkg from "@/package.json";
 import { createLogger } from "@/lib/logging/logger";
 import { configuredOrigins, parseOrigin } from "@/lib/security/origin";
+import { validateProductionEnv, logEnvValidationOnce } from "@/lib/config/runtime-env";
 
 export async function GET(req: Request) {
   const requestId = req.headers.get("x-request-id") || crypto.randomUUID();
@@ -38,10 +39,16 @@ export async function GET(req: Request) {
     nodeEnv: process.env.NODE_ENV
   });
 
+  const envValidation = validateProductionEnv();
+  if (!envValidation.ok) {
+    logEnvValidationOnce();
+  }
+
   logger.info("Health check completed", { db, redis });
 
-  return ok({
-    status: db === "ok" && redis === "ok" ? "ok" : "degraded",
+  const healthy = db === "ok" && redis === "ok" && envValidation.ok;
+  const payload = {
+    status: healthy ? "ok" : "degraded",
     time: new Date().toISOString(),
     gitSha: process.env.GIT_SHA || process.env.VERCEL_GIT_COMMIT_SHA || null,
     db,
@@ -49,6 +56,20 @@ export async function GET(req: Request) {
     version: pkg.version,
     appUrl,
     nextAuthUrl,
-    allowedOriginsCount: allowedOrigins.size
-  });
+    allowedOriginsCount: allowedOrigins.size,
+    env: envValidation.ok
+      ? {
+          ok: true
+        }
+      : {
+          ok: false,
+          missingKeys: envValidation.missing,
+          invalidKeys: envValidation.invalid
+        }
+  };
+
+  if (!healthy) {
+    return Response.json(payload, { status: 500 });
+  }
+  return ok(payload);
 }
