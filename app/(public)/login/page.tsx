@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Building2, ShieldCheck } from "lucide-react";
 import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/button";
@@ -12,15 +13,20 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
 export default function LoginPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [clicked, setClicked] = useState(false);
+  const [signInErrorDebug, setSignInErrorDebug] = useState("");
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
+    setClicked(true);
     setLoading(true);
     setError("");
+    setSignInErrorDebug("");
 
     let result:
       | {
@@ -35,13 +41,14 @@ export default function LoginPage() {
       result = await signIn("credentials", {
         email,
         password,
-        redirect: true,
-        callbackUrl: "/auth/post-login"
+        redirect: false,
+        callbackUrl: "/dashboard"
       });
     } catch (error) {
       console.error("[login] signIn request threw", error);
       setLoading(false);
       setError("Login failed. Please try again.");
+      setSignInErrorDebug(error instanceof Error ? error.message : String(error));
       toast.error("Login failed", { description: "Unable to reach authentication service." });
       return;
     }
@@ -59,14 +66,14 @@ export default function LoginPage() {
           : "Invalid credentials or too many attempts.";
       setLoading(false);
       setError(message);
+      setSignInErrorDebug(authError);
       toast.error("Login failed", { description: message });
       return;
     }
 
-    const destination = result.url || "/auth/post-login";
+    const destination = result.url || "/dashboard";
     setLoading(false);
-    // Fallback only; in normal flow redirect:true will already navigate.
-    window.location.assign(destination);
+    router.replace(destination);
   }
 
   return (
@@ -93,6 +100,10 @@ export default function LoginPage() {
               {loading ? "Signing in..." : "Sign in"}
             </Button>
           </form>
+          <div className="rounded-md border border-border bg-muted/40 p-2 text-xs text-muted-foreground">
+            <div>Clicked: {clicked ? "yes" : "no"}</div>
+            {signInErrorDebug ? <div>signIn error: {signInErrorDebug}</div> : null}
+          </div>
           {error ? (
             <Alert className="border-destructive/30">
               <AlertTitle>Sign in failed</AlertTitle>

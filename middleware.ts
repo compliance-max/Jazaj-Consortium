@@ -177,6 +177,16 @@ export async function middleware(req: NextRequest) {
   const requestHeaders = new Headers(req.headers);
   requestHeaders.set("x-request-id", requestId);
 
+  if (pathname.startsWith("/api/auth/")) {
+    const response = NextResponse.next({
+      request: {
+        headers: requestHeaders
+      }
+    });
+    response.headers.set("x-request-id", requestId);
+    return response;
+  }
+
   if (isApi && req.method === "OPTIONS" && !pathname.startsWith("/api/auth/")) {
     if (!isAllowedOrigin(req)) {
       return rejectWithLog({
@@ -326,6 +336,21 @@ export async function middleware(req: NextRequest) {
     }
     if (!token.role || !ADMIN_ROLES.has(String(token.role))) {
       return NextResponse.redirect(new URL("/portal", req.url));
+    }
+  }
+
+  if (pathname.startsWith("/login")) {
+    if (token?.sub && !token.disabledAt) {
+      return NextResponse.redirect(new URL("/dashboard", req.url));
+    }
+  }
+
+  if (pathname.startsWith("/dashboard")) {
+    if (!token?.sub) return NextResponse.redirect(new URL("/login", req.url));
+    if (token.disabledAt) {
+      const response = NextResponse.redirect(new URL("/login?error=disabled", req.url));
+      clearAuthCookies(response);
+      return response;
     }
   }
 
